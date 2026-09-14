@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "SSB MCP API",
-    "version": "2.9.1",
+    "version": "2.10.0",
     "description": "Lean, fast odds analysis engine for AI agents. Screens 36+ sportsbooks across NBA, MLB, NHL, NFL, WNBA, UFC, Tennis, Soccer — ranks plays by sharp movement, consensus edge, and steam detection.\n\nSee the README for setup instructions and tool guides by user type.",
     "contact": {
       "name": "James Drake",
@@ -570,7 +570,7 @@
     },
     "/tools/ev_candidates": {
       "post": {
-        "summary": "Query the +EV endpoint and return candidate plays for enabled books. Secondary discovery tool. NOTE: tier/kaiCall/edge/screenScore are signal-quality ratings (what sharp books are doing), NOT win-probability predictions.",
+        "summary": "Query the Positive EV board and return candidate plays for enabled books. This is the primary discovery source; exact validation still controls actionability. NOTE: tier/kaiCall/edge/screenScore are signal-quality ratings (what sharp books are doing), NOT win-probability predictions.",
         "operationId": "ev_candidates",
         "tags": ["SSB MCP Tools"],
         "requestBody": {
@@ -1454,7 +1454,7 @@
     },
     "/tools/get_market_registry": {
       "post": {
-        "summary": "REGISTRY — discover available markets for a sport on a specific book. Call before quick_screen to know which markets are available for your league+book combo.",
+        "summary": "REGISTRY — discover available main-line and exact player/pitcher prop markets for a sport on a specific book. Returns markets plus propMarkets. Call before scan or quick_screen; includeProps:true opts into manual prop scans, which increase fan-out and rate-limit risk.",
         "operationId": "get_market_registry",
         "tags": ["SSB MCP Tools"],
         "requestBody": {
@@ -3579,7 +3579,7 @@
     },
     "/tools/quick_screen": {
       "post": {
-        "summary": "SCAN — one-call sharp-play scanner across leagues × markets. Returns ranked results with tiers, edge, movement, and validation. NOTE: tier/kaiCall/edge/screenScore are signal-quality ratings (what sharp books are doing), NOT win-probability predictions.",
+        "summary": "SCAN — one-call sharp-play scanner across leagues × markets. Returns ranked results with tiers, edge, movement, and validation. Current odds/targetBookOdds come from the on-demand screen lookup and are the execution quote. Movement-history age is separate diagnostic metadata; it is not quote age and should not be surfaced as a reason to manually check the app. NOTE: tier/kaiCall/edge/screenScore are signal-quality ratings (what sharp books are doing), NOT win-probability predictions.",
         "operationId": "quick_screen",
         "tags": ["SSB MCP Tools"],
         "requestBody": {
@@ -3721,6 +3721,11 @@
                     "type": "string",
                     "enum": ["asc", "desc"],
                     "description": "Optional sort direction. Overrides the per-field default. asc = ascending, desc = descending."
+                  },
+                  "evFirst": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Use the Positive EV board as the primary discovery source. Set false to use the odds screen only."
                   },
                   "topPick": {
                     "type": "boolean",
@@ -4060,7 +4065,7 @@
     },
     "/tools/scan": {
       "post": {
-        "summary": "SCAN — simplified one-call sharp-play scanner. Preferred entry point for AI agents. Wraps quick_screen with smart defaults (NoVigApp, all markets, supportive movement only, sorted by edge). Pass `sport` instead of `league` for ergonomics (e.g. sport=\"tennis\").",
+        "summary": "SCAN — simplified one-call Positive EV-first scanner. Preferred entry point for AI agents. Uses the paid Positive EV board first, then screen fallback, with exact validation gates. Pass `sport` instead of `league` for ergonomics (e.g. sport=\"tennis\").",
         "operationId": "scan",
         "tags": ["SSB MCP Tools"],
         "requestBody": {
@@ -4289,6 +4294,10 @@
                   "league": {
                     "type": "string",
                     "description": "League such as NBA"
+                  },
+                  "leagueName": {
+                    "type": "string",
+                    "description": "Optional competition or tournament name filter, for example US Open for Tennis"
                   },
                   "games": {
                     "type": "array",
