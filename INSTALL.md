@@ -6,7 +6,7 @@ SSB MCP is a Model Context Protocol server plus a setup CLI. The npm package is 
 
 - Node.js 20 or newer
 - npm 10 or newer
-- A SSB account with valid credentials (see the auth section in [README.md](README.md))
+- A [PropProfessor](https://propprofessor.com) account with valid credentials — the free tier is enough (see the auth section in [README.md](README.md))
 
 ## Install from source
 
@@ -17,34 +17,34 @@ npm ci
 npm link
 ```
 
-This exposes the `pp`, `pp-mcp`, `pp-query`, and `pp-backtest` binaries.
+This exposes the canonical `ssb`, `ssb-mcp`, `ssb-query`, and `ssb-backtest` binaries, plus the original `pp`, `pp-mcp`, `pp-query`, and `pp-backtest` names. Both name sets are identical — `ssb` and `pp` are the same CLI.
 
 ## First-run setup
 
 ```bash
-pp-query login
+ssb-query login
 ```
 
-This stores your SSB credentials locally under `~/.ssb-for-agents/` (auth files are written with owner-only permissions). Logging in is a one-time, manual action — there is no automated login or scheduled polling.
+This stores your PropProfessor session locally under `~/.ssb-for-agents/` (auth files are written with owner-only permissions). Logging in is a one-time, manual action — there is no automated login or scheduled polling.
 
 ## Verify the install
 
 ```bash
-pp-mcp --help
-pp-query doctor
+ssb-mcp --help
+ssb-query doctor
 ```
 
-`pp-query doctor` checks that your local auth state is valid without making a live SSB request.
+`ssb-query doctor` checks that your local auth state is valid without making a live PropProfessor request. The `pp-mcp` / `pp-query` names behave identically.
 
 ## MCP client configuration
 
-Point your MCP client at the `pp-mcp` binary (stdio transport). For example, a Claude-style client config entry:
+Point your MCP client at the `ssb-mcp` binary (stdio transport). For example, a Claude-style client config entry:
 
 ```json
 {
   "mcpServers": {
     "ssb": {
-      "command": "pp-mcp",
+      "command": "ssb-mcp",
       "args": []
     }
   }
@@ -58,15 +58,15 @@ SSB endpoints are manual-only. The package contains no cron jobs, scheduled work
 ## Uninstall
 
 ```bash
-npm uninstall -g ssb-for-agents
+npm unlink -g ssb-for-agents   # for a clone install done with `npm link`
 ```
 
 Local data under `~/.ssb-for-agents/` is left in place.
 
 ## Troubleshooting
 
-- `pp-query doctor` reports an auth problem → re-run `pp-query login`.
-- `pp-mcp` fails to start → confirm the binary is on your PATH after `npm install -g`.
+- `ssb-query doctor` reports an auth problem → re-run `ssb-query login`.
+- `ssb-mcp` fails to start → confirm the binary is on your PATH (a clone install exposes it via `npm link`).
 - Any other issue → open a GitHub issue on the repository.
 
 See [README.md](README.md) for the full user guide and [CHANGELOG.md](CHANGELOG.md) for release history.

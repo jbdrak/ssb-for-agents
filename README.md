@@ -108,7 +108,23 @@ That's it — your agent now sees 31 tools.
 
 > **Verify your install:** `npm run install:verify` runs the credential-free install verification suite.
 
-### CLI — `pp`
+## ⬆️ Upgrading from `propprofessor-mcp`
+
+The project was renamed in 2.10.0. The old GitHub URL redirects, and nothing changed behaviorally — but a few consumer-visible identifiers moved. If you installed from source before the rename:
+
+```bash
+mv ~/.propprofessor ~/.ssb-for-agents   # move your auth/state (or just re-run `pp-query login`)
+```
+
+- **State directory:** `~/.propprofessor` → `~/.ssb-for-agents`. A `mv` preserves permissions; re-running `pp-query login` is the alternative.
+- **Environment variables:** `PROPPROFESSOR_*` → `SSB_*`. The `PP_*` variables are unchanged.
+- **Module paths (deep imports only):** `lib/propprofessor-*.js` → `lib/ssb-*.js`.
+- **Binaries:** `ssb`, `ssb-mcp`, `ssb-query`, and `ssb-backtest` are the canonical names. The `pp`, `pp-mcp`, `pp-query`, and `pp-backtest` names still work and are unchanged.
+- **Deliberately unchanged:** the upstream API hosts (`app.` / `backend.` / `screen.` / `slipgen.propprofessor.com`) and the `pp` / `PP_*` CLI and env names.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full breaking-change list.
+
+### CLI — `ssb` (alias `pp`)
 
 SSB ships with a fast, standalone CLI that calls handlers directly — no MCP server needed.
 
@@ -117,36 +133,37 @@ git clone https://github.com/jbdrak/ssb-for-agents.git
 cd ssb-for-agents
 npm ci
 npm link
-pp scan mlb tennis -M supportive -n3
+ssb scan mlb tennis -M supportive -n3
 ```
 
-18 commands for scanning, validation, setup, and logging:
+Run `ssb --help` for the live list. Every `ssb` command also answers to its `pp` alias.
 
-| Command                 | Description                                             |
-| ----------------------- | ------------------------------------------------------- |
-| `pp scan [leagues...]`  | Find plays across leagues                               |
-| `pp scan -M supportive` | Filter by movement (clean, bouncy, adverse)             |
-| `pp scan --fast`        | Quick scan (5 fastest leagues)                          |
-| `pp scan -B`            | Only BET verdict plays                                  |
-| `pp validate <playId>`  | Validate a specific play                                |
-| `pp game <gameId>`      | Get full game details                                   |
-| `pp player <name>`      | Player context + injury/risk flags                      |
-| `pp prices <gameId>`    | Compare prices across books                             |
-| `pp log <gameId>`       | Log a pick                                              |
-| `pp picks`              | Recent pick history                                     |
-| `pp rank <league>`      | Ranked plays for a league                               |
-| `pp fantasy`            | Fantasy optimizer props                                 |
-| `pp today`              | Today's slate + pending picks                           |
-| `pp health`             | Auth + backend health check                             |
-| `pp-mcp`                | MCP server (stdio) — connect your AI agent              |
-| `pp-query init`         | One-command setup (Node check + auth + doctor + config) |
-| `pp-query login`        | Browser login to SSB                                    |
-| `pp-query doctor`       | Full diagnostic check                                   |
+| Command                       | Description                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `ssb scan [leagues...]`       | Find plays across leagues. `-M <movement>`, `--fast`, `--deep`, `-B` (BET only), `--record-scan` |
+| `ssb validate <playId>`       | Validate a specific play                                                                         |
+| `ssb game <gameId>`           | Full game details                                                                                |
+| `ssb today`                   | Today's slate + pending picks                                                                    |
+| `ssb card`                    | Today's bet slip (BETs across all markets, kickoff-sorted)                                       |
+| `ssb rank <league>`           | Ranked plays for a league                                                                        |
+| `ssb prices <gameId>`         | Compare prices across books                                                                      |
+| `ssb links [leagues...]`      | Sportsbook event links from the EV feed                                                          |
+| `ssb player <name>`           | Player context + injury/risk flags                                                               |
+| `ssb wallets`                 | Top Polymarket wallets vs a book (bet/pass)                                                      |
+| `ssb fantasy`                 | Fantasy optimizer props                                                                          |
+| `ssb picks`                   | Recent pick history                                                                              |
+| `ssb log <gameId>`            | Log a pick                                                                                       |
+| `ssb record`                  | Official bets + P&L from the tracker ledger — `stats`, `review`, or `pending` (local, read-only) |
+| `ssb record-card <card.json>` | Promote a reviewed decision card into the ledger                                                 |
+| `ssb health`                  | Auth + backend health check                                                                      |
+| `ssb --mcp`                   | Run as MCP stdio server                                                                          |
 
-**MCP mode:** `pp --mcp` runs as an MCP stdio server. Connect it to Claude Desktop,
+Companion binaries (each with a `pp-` alias): `ssb-mcp` (MCP stdio server), `ssb-query init` / `login` / `doctor` (setup + auth), `ssb-backtest`.
+
+**MCP mode:** `ssb --mcp` runs as an MCP stdio server. Connect it to Claude Desktop,
 Cursor, Cline, or any MCP client. Pass `--mode full` for the full 31-tool surface.
 
-**Quick start (from a clone):** after `npm link`, run `pp --mcp` to start the MCP server. No global package download is required.
+**Quick start (from a clone):** after `npm link`, run `ssb --mcp` to start the MCP server. No global package download is required.
 **Development/clone setup:** use the full path — `node /path/to/scripts/ssb-mcp-server.js` — see [MCP Client Setup](#mcp-client-setup) below.
 
 All commands support `-j`/`--json` for piping and `--no-color` for CI/Telegram output.

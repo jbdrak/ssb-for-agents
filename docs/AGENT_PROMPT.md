@@ -365,7 +365,7 @@ Total exposure: $40 (4% of bankroll) ✅
 
 If `health_status` returns `auth.valid: false` or any tool returns an auth error:
 
-1. Tell the user: "Your SSB session has expired. Please run `pp-query login` to re-authenticate."
+1. Tell the user: "Your SSB session has expired. Please run `ssb-query login` to re-authenticate."
 2. Do not attempt to retry the failed call — it will fail again until auth is refreshed.
 3. After the user confirms they've re-logged in, call `health_status` to verify before proceeding.
 

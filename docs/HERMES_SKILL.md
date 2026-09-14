@@ -1,6 +1,6 @@
 ---
 name: ssb-for-agents
-description: 'SSB MCP: sports betting analysis for AI agents. Screens 36+ books, ranks by sharp movement, validates with multi-window consensus. Multi-market (ML/Spread/Total), market aliasing, consensus strength scoring.'
+description: 'SSB MCP: sports betting analysis for AI agents. Screens 39 books, ranks by sharp movement, validates with multi-window consensus. Multi-market (ML/Spread/Total), market aliasing, consensus strength scoring.'
 version: 1.4.0
 author: James Drake
 tags: [sports-betting, mcp, odds-analysis, sharp-movement]
@@ -10,7 +10,7 @@ tags: [sports-betting, mcp, odds-analysis, sharp-movement]
 
 ## What It Does
 
-SSB is an odds analysis engine for AI agents. It screens 36+ sportsbooks, ranks plays by sharp-book consensus and multi-window line movement, enriches candidates with player-context research (news + tweets), and outputs tiered recommendations with Kelly-based staking. Supported leagues: NBA, MLB, NHL, WNBA, Tennis, UFC, Soccer, NCAAB, NCAAF, NFL.
+SSB is an odds analysis engine for AI agents. It screens 39 sportsbooks, ranks plays by sharp-book consensus and multi-window line movement, enriches candidates with player-context research (news + tweets), and outputs tiered recommendations with Kelly-based staking. Supported leagues: NBA, MLB, NHL, WNBA, Tennis, UFC, Soccer, NCAAB, NCAAF, NFL.
 
 ## Mandatory Operating Rules
 
