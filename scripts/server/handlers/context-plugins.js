@@ -95,10 +95,14 @@ function createContextPluginsHandlers(client, _ctx) {
       if (args.market) filters.market = args.market;
       if (args.isLive === true) filters.isLive = true;
       const result = await client.queryBackendFantasyPicks(filters);
+      // The live backend returns an envelope: { freeTier, threshold, omitted, bets: [...] }.
+      // Legacy callers/tests return a bare array. Normalize both, otherwise the envelope is
+      // discarded and the whole fantasy board is silently reported as empty.
+      const picks = Array.isArray(result) ? result : Array.isArray(result?.bets) ? result.bets : [];
       return {
         ok: true,
-        count: Array.isArray(result) ? result.length : 0,
-        result: Array.isArray(result) ? result : []
+        count: picks.length,
+        result: picks
       };
     },
 
