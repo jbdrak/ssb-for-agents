@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { mapCandidateRow } = require('../lib/ssb-mcp-candidate-mapper');
+const { mapCandidateRow, tennisStartNote } = require('../lib/ssb-mcp-candidate-mapper');
 
 describe('mapCandidateRow screenUrl', () => {
   it('builds a screenUrl deep-link when gameId/market/selection present', () => {
@@ -176,5 +176,41 @@ describe('mapCandidateRow screenUrl', () => {
       `summary should name originator, got: ${out.movementSummary}`
     );
     assert.equal(out.sharpBookMovementOrigin, 'originator');
+  });
+});
+
+describe('tennisStartNote', () => {
+  const tennis = (extra) => ({ league: 'Tennis', game: 'A vs B', ...extra });
+  const SCHEDULED = 'Scheduled start — tennis matches may be delayed';
+
+  it('keeps the plain note when Flashscore corroborated the start', () => {
+    assert.equal(tennisStartNote(tennis({ startSource: 'flashscore', startConfidence: 0.95 })), SCHEDULED);
+    assert.equal(tennisStartNote(tennis({ startSource: 'flashscore-verified', startConfidence: 0.95 })), SCHEDULED);
+  });
+
+  it('flags a web-search estimate as unverified, naming the source and confidence', () => {
+    const note = tennisStartNote(tennis({ startSource: 'web_search', startConfidence: 0.6 }));
+    assert.match(note, /NOT Flashscore-verified/);
+    assert.match(note, /web_search/);
+    assert.match(note, /0\.6/);
+    assert.notEqual(note, SCHEDULED);
+  });
+
+  it('flags raw feed data and an absent source as unverified', () => {
+    assert.match(
+      tennisStartNote(tennis({ startSource: 'pp-mcp (unverified)', startConfidence: 0.3 })),
+      /NOT Flashscore-verified/
+    );
+    assert.match(tennisStartNote(tennis({})), /NOT corroborated by Flashscore/);
+  });
+
+  it('leaves non-tennis rows alone', () => {
+    assert.equal(tennisStartNote({ league: 'MLB', startSource: 'web_search' }), null);
+  });
+
+  it('flows through mapCandidateRow', () => {
+    const out = mapCandidateRow(tennis({ startSource: 'web_search', startConfidence: 0.6 }));
+    assert.match(out.startNote, /NOT Flashscore-verified/);
+    assert.equal(mapCandidateRow(tennis({ startSource: 'flashscore' })).startNote, SCHEDULED);
   });
 });
