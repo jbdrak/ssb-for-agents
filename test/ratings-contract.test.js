@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { SOURCES, supportedLeagues, validateRatingRecord } = require('../lib/ssb-ratings-contract');
+const { SOURCES, PROBABILITY_KINDS, supportedLeagues, validateRatingRecord } = require('../lib/ssb-ratings-contract');
 
 function validRecord(overrides = {}) {
   return {
@@ -61,6 +61,8 @@ describe('ssb-ratings-contract', () => {
       'marketOpen',
       'matchStatus',
       'method',
+      'modelWinProbability',
+      'modelWinProbabilityKind',
       'neutral',
       'predictedMargin',
       'predictedScoreA',
@@ -159,8 +161,58 @@ describe('ssb-ratings-contract', () => {
     }
   });
 
+  it('accepts a probability only with its attribution, and rejects either half alone', () => {
+    const published = validateRatingRecord(
+      validRecord({ modelWinProbability: 0.75, modelWinProbabilityKind: 'published' })
+    );
+    assert.equal(published.ok, true);
+    assert.equal(published.record.modelWinProbability, 0.75);
+    assert.equal(published.record.modelWinProbabilityKind, 'published');
+
+    const derived = validateRatingRecord(validRecord({ modelWinProbability: 0.5, modelWinProbabilityKind: 'derived' }));
+    assert.equal(derived.ok, true);
+
+    // A number with no attribution is exactly what must never reach a score.
+    const unattributed = validateRatingRecord(validRecord({ modelWinProbability: 0.75 }));
+    assert.equal(unattributed.ok, false);
+    assert.ok(unattributed.errors.some((error) => /modelWinProbabilityKind/.test(error)));
+
+    // ...and a kind describing no number is a bug, not a record.
+    const headless = validateRatingRecord(validRecord({ modelWinProbabilityKind: 'published' }));
+    assert.equal(headless.ok, false);
+    assert.ok(headless.errors.some((error) => /requires modelWinProbability$/.test(error)));
+
+    const unknownKind = validateRatingRecord(
+      validRecord({ modelWinProbability: 0.75, modelWinProbabilityKind: 'guessed' })
+    );
+    assert.equal(unknownKind.ok, false);
+    assert.ok(unknownKind.errors.some((error) => /modelWinProbabilityKind/.test(error)));
+  });
+
+  it('fails an out-of-range probability loudly instead of nulling it into "no probability"', () => {
+    // A 0-100 value reaching a 0-1 field is a wrong-scale read; swallowing it
+    // would leave a record that reads as "this source publishes no probability".
+    for (const bad of [75, -0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 'seventy-five']) {
+      const { ok, errors } = validateRatingRecord(
+        validRecord({ modelWinProbability: bad, modelWinProbabilityKind: 'published' })
+      );
+      assert.equal(ok, false, `${String(bad)} must not validate`);
+      assert.ok(errors.some((error) => /invalid modelWinProbability/.test(error)));
+    }
+  });
+
+  it('accepts a record with no probability at all (the rating-only case)', () => {
+    const { ok, record } = validateRatingRecord(
+      validRecord({ modelWinProbability: null, modelWinProbabilityKind: null })
+    );
+    assert.equal(ok, true);
+    assert.equal(record.modelWinProbability, null);
+    assert.equal(record.modelWinProbabilityKind, null);
+  });
+
   it('exposes the canonical sources', () => {
     assert.deepEqual(SOURCES, ['massey', 'sagarin', 'sasser', 'tennis_elo']);
+    assert.deepEqual(PROBABILITY_KINDS, ['published', 'derived']);
   });
 
   it('maps supported leagues per source, excluding MLB for sagarin and non-NCAAF for sasser', () => {

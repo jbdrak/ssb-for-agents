@@ -167,9 +167,9 @@ play responses.
 
 ### External-model benchmark adapters
 
-Third-party rating and prediction sources (Massey, Sagarin, Sasser) live in a
-**shadow / benchmark layer** that is deliberately never wired into live `BET`
-eligibility. Ratings are additive context for evaluation; they must not change
+External rating and prediction sources (Massey, Sagarin, Sasser, plus the
+locally-built tennis Elo snapshot) live in a **shadow / benchmark layer** that is
+deliberately never wired into live `BET` eligibility. Ratings are additive context for evaluation; they must not change
 `kaiCall`, `displayTier`, `confidenceTier`, `finalVerdict`, `consensusEdge`,
 `screenScore`, or `riskScore`. The overlay's two-run invariant test proves it
 leaves every one of those fields identical at the module level (see the wiring
@@ -183,39 +183,81 @@ Prefer these adapters over changing the live ranking path or the v2 ledger.
   (`source`, `method`, `league`, `season`, `asOf`, `fetchedAt`, `sourceUrl`,
   `sourceHash`, `teamA/teamB`, `ratingA/ratingB`, `predictedScoreA/B`,
   `predictedTotal`, `predictedMargin`, `homeAdvantage`, `marketOpen`,
-  `marketCurrent`, `coverage`, `matchStatus`, `unresolvedReason`). Validation is
-  pure and fails closed: an unusable numeric becomes `null` and forces
-  `coverage: 'partial'`; a missing `sourceUrl`/`sourceHash`/`fetchedAt` is an
-  error; an `unresolved` record must carry a reason.
+  `marketCurrent`, `modelWinProbability`, `modelWinProbabilityKind`, `coverage`,
+  `matchStatus`, `unresolvedReason`). Validation is pure and fails closed: an
+  unusable numeric becomes `null` and forces `coverage: 'partial'`; a missing
+  `sourceUrl`/`sourceHash`/`fetchedAt` is an error; an `unresolved` record must
+  carry a reason. `modelWinProbability` is the one field an evaluation needs, and
+  it is always paired with its attribution (`published` = the source's own printed
+  number, `derived` = computed by a documented conversion): a probability with no
+  kind, a kind with no number, or a value outside `[0, 1]` is an error, so a number
+  we computed can never be read as one a vendor published.
 - `lib/ratings-sources/massey.js`, `.../sagarin.js`, `.../sasser.js` — one pure
   adapter per source, each with an **injected** `fetchImpl` (no test path can
   reach the network) and a pure `normalizeX`. Massey additionally has
   `lib/ratings-sources/massey-web.js`, the transport that gets past its host's
   bot wall (got-scraping) and de-obfuscates the page's export payload; the other
-  two sources need no such layer. See the coverage table below.
+  two sources need no such layer.
+- `lib/ratings-sources/tennis-elo.js` — the fourth source adapter. It has no
+  fetch at all: it normalizes a locally-built snapshot (`lib/tennis-elo-data.js`)
+  into the same contract, is **Moneyline-only**, and identifies a fixture by its
+  two player names. See the coverage table below.
 - `lib/ssb-ratings-snapshot.js` — versioned, hash-carrying snapshots in the local
   state dir, never the repo (see below).
 - `lib/ssb-ratings-overlay.js` — additive `applyRatingsOverlay`: attaches
-  `row.ratings = { massey, sagarin, sasser }` on the **composite**
+  `row.ratings = { <source>: … }`, one entry per source in the contract's
+  `SOURCES` (massey, sagarin, sasser, tennis_elo), on the **composite**
   `(league, canonical game identity, market)` key, only adds (never clobbers a
   pre-existing `row.ratings`), and fails closed with `null` on any unresolvable
-  team/league/matchup.
+  team/league/matchup. Identity is not the only way a record can be wrong: the
+  join is also gated **per row** on recency against that row's own event start,
+  so an off-season snapshot cannot be attached as live context. Withheld records
+  become an explicit marker (`records: []`, `withheld`, `stale`, `reasonKind`,
+  `reason` naming both dates and the window) rather than silent context.
+- `lib/ssb-ratings-recency.js` — the layer's **one** recency rule:
+  `isBefore(asOf, cutoff)`, the same comparison `ssb-ratings-snapshot.js` already
+  applied to a caller-supplied `asOfCutoff`. Callers differ only in the cutoff
+  they supply: the store takes one from its caller, the overlay takes
+  `eventStart - ATTACH_MAX_AGE_DAYS` (14) per row, the evaluation pipeline takes
+  the settled game's timestamp minus the same window, and tennis Elo stays
+  strictest (the prediction date itself, plus an optional caller floor).
 - `lib/ssb-external-ratings-evaluation.js` — source-agnostic
   normalize → score → segment machinery. `scoreRatingRows` / `segmentRatingRows`
   delegate to `scoreEvaluationRows` / `segmentEvaluationRows`; `evaluateRatingSources`
   scores each source **independently** (no composite blend); `evaluateMarketRelative`
   is the gate that compares each source against the de-vigged close.
+- `lib/ssb-ratings-evaluation-bridge.js` — **the join between the two halves.**
+  `buildRatingEvaluationRows({ records, outcomes, markets })` turns adapter records
+  (the overlay's own input vocabulary) plus settled outcomes and recorded market
+  closes into exactly the rows `evaluateRatingSources` / `evaluateMarketRelative`
+  consume, and returns `{ rows, sources, skipped, counts }`. Each source declares
+  where its probability comes from: **Sagarin** carries the page's own `WIN%`
+  (`published`, whole-percent precision), **tennis Elo** carries its engine's own
+  Elo expectation (`derived`, no fitted parameters), and **Massey** and **Sasser**
+  are declined with a stated reason because neither publishes a win probability and
+  no documented rating-to-probability conversion exists for Massey. That reason
+  matters structurally: the evaluator omits a source with no rows from its own
+  output, so without it a source that can never produce a number would read exactly
+  like a quiet slate. Join rules are the layer's, not new ones: identity comes from
+  the overlay's `canonicalGameKey`, recency from the shared `ATTACH_MAX_AGE_DAYS`
+  window the evaluator applies, a market input must match the record's own market
+  scope (a market-wildcard record is served only by a market-less input, so a win
+  probability is never compared against another market's close), and a pairing two
+  settled outcomes claim is refused as `ambiguous_fixture` rather than collapsed
+  onto one game.
 
-**Wiring status: the overlay is built and tested but not yet invoked from any
-production call site.** `applyRatingsOverlay` / `canonicalGameKey` are required
-only by `test/ratings-overlay.test.js`, and nothing in the scan path calls them,
-so a live scan does not emit a `ratings` field today. The rank-neutrality result
-is therefore **module-level** (the two-run invariant test in
-`test/ratings-overlay.test.js` proves the overlay leaves every ranking/tier/
-verdict/score field identical), not a proven live-path result. A `ratings` key is
-whitelisted into the feature snapshot in `lib/record-candidates.js`, so an
-overlay run would survive into the ledger, but wiring the overlay into a
-production path is separate, explicit follow-up work.
+**Wiring status: wired into `pp scan`, opt-in and default OFF.** `cmdScan` in
+`bin/pp-cli.js` calls `applyScanRatingsOverlay`, which invokes `applyRatingsOverlay`
+only when `--ratings-overlay` (or `SSB_RATINGS_OVERLAY=true`) is set;
+`--no-ratings-overlay` forces it off, so a normal scan emits no `ratings` field.
+The overlay is pure enrichment: it only ADDS `row.ratings` and leaves `kaiCall`,
+`displayTier`, `confidenceTier`, `finalVerdict`, `consensusEdge`, `screenScore`,
+and `riskScore` untouched, so no external rating reaches live BET eligibility.
+Rank-neutrality is proven **at module level** by the two-run invariant test in
+`test/ratings-overlay.test.js`; the opt-in CLI path calls that same module, so no
+separate live A/B neutrality run is claimed. A `ratings` key is whitelisted into
+the feature snapshot in `lib/record-candidates.js`, so an overlay run survives
+into the ledger.
 
 The Sagarin-only helper `lib/sagarin-external-evaluation.js` is retained and now
 delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
@@ -224,17 +266,22 @@ delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
 
 **Per-source coverage (canonical repo league codes)**
 
-| Source  | Leagues                                           | Notes                                                                                            |
-| ------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Massey  | CFB→`NCAAF`, NFL, NBA, NCAAB, NHL, MLB, MLS, WNBA | The only source with MLB **team** ratings. NCAAB reads the NCAA D1 ratings table.                |
-| Sagarin | CFB→`NCAAF`, NFL, NBA, CBB→`NCAAB`, NHL, MLS      | **No MLB team ratings** — Sagarin's baseball page is player ratings.                             |
-| Sasser  | CFB→`NCAAF` only                                  | A per-game projection overlay, not a rating (`ratingA/B` null, `coverage: 'partial'` by design). |
+| Source     | Leagues                                           | Notes                                                                                                     |
+| ---------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Massey     | CFB→`NCAAF`, NFL, NBA, NCAAB, NHL, MLB, MLS, WNBA | The only source with MLB **team** ratings. NCAAB reads the NCAA D1 ratings table.                         |
+| Sagarin    | CFB→`NCAAF`, NFL, NBA, CBB→`NCAAB`, NHL, MLS      | **No MLB team ratings** — Sagarin's baseball page is player ratings.                                      |
+| Sasser     | CFB→`NCAAF` only                                  | A per-game projection overlay, not a rating (`ratingA/B` null, `coverage: 'partial'` by design).          |
+| tennis_elo | `TENNIS` only                                     | A locally-built, Moneyline-only Elo (`lib/tennis-elo-data.js`); no fetch, and no totals/handicap pricing. |
 
 Massey's NCAAB coverage reads the NCAA D1 ratings page, and the team-alias
-registry seeds all 362 ESPN-published D1 programs, so its rows join to a game
-instead of staying `unresolved`. ESPN publishes no team for Queens, Lindenwood,
-Southern Indiana or St. Francis (PA), so those four stay `unresolved` rather than
-getting a guessed key.
+registry covers the live D1 table: every row of the 2026-09-16 Massey NCAAB export
+(365 teams) resolves, so its rows join to a game instead of staying `unresolved`.
+The registry seeds ESPN's 362-program D1 basketball roster plus the four programs
+that roster omits while the live table prints them (Queens University, Lindenwood,
+Southern Indiana, Saint Francis PA), keyed from the same ESPN teams family
+published under another sport. A team the registry does not know still stays
+`unresolved` rather than getting a guessed key, and because this table tracks
+current D1 membership it drifts as programs join or leave D1.
 
 A league a source does not publish returns `coverage: 'unavailable'` with a
 stated reason, and the refresh never fetches it — an empty ratings table and a
@@ -246,7 +293,7 @@ caller typo.
 **Snapshots live outside the repo**
 
 Store every external snapshot separately from settled SSB bets, under
-`PP_RATINGS_DIR` (default `~/.ssb-for-agents/ratings/`), as
+`SSB_RATINGS_DIR` (default `~/.ssb-for-agents/ratings/`), as
 `<source>-<league>-<season>.json` (`schemaVersion: 1`). No third-party dataset is
 bundled in the repo: Massey's terms reserve all rights, so only derived records
 plus a `sourceHash` are kept, and the store refuses a write anywhere inside the

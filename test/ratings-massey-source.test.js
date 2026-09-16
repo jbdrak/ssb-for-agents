@@ -2,6 +2,8 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { supportedLeagues, validateRatingRecord } = require('../lib/ssb-ratings-contract');
 const { getSupportedLeagues } = require('../lib/league-presets');
@@ -45,14 +47,28 @@ const HEADER_ONLY_FIXTURE = `College Football : FBS Using games thru Sun, Sep 13
 Team,Rec,Δ,Rat,Pwr,Off,Def,HFA,SoS,SSF,EW,EL
 `;
 
-// College basketball is off-season in mid-September, so the live NCAA D1 page's
-// heading reads "Using games thru Preseason" and carries no date. Same column
-// layout as the football export.
-const NCAAB_CSV_FIXTURE = `College Basketball : NCAA D1 Using games thru Preseason
-Team,Rec,Δ,Rat,Pwr,Off,Def,HFA,SoS,SSF,EW,EL
-Indiana,0-0 0.000,+1,1 12.10,1 85.00,1 70.00,1 45.00,2.14,1 60.00,1 70.00,8.59,1.41
-Ohio St,0-0 0.000,+2,6 10.94,6 80.17,6 68.02,1 45.01,2.29,5 68.11,16 67.14,8.60,1.40
-`;
+// Live captures (2026-09-16) taken through the adapter's own transport; see
+// `test/fixtures/ratings/README.md` for URL, sha256 and the page's own heading.
+// Three of the four are OUT OF SEASON, which is exactly why they are here: their
+// headings read `Using games thru Preseason` instead of a date, so `asOf` and
+// `season` cannot be derived even though the table below parses perfectly. A
+// hand-shaped fixture cannot prove that split - it is the real page's own
+// heading text that must drive the outcome.
+const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'ratings');
+
+function capture(name) {
+  return fs.readFileSync(path.join(FIXTURE_DIR, name), 'utf8');
+}
+
+const PRESEASON_CAPTURES = {
+  NBA: capture('massey-nba-2026-09-16.csv'),
+  NHL: capture('massey-nhl-2026-09-16.csv'),
+  NCAAB: capture('massey-ncaab-2026-09-16.csv')
+};
+
+// The dated positive control: same transport, same column layout, a real
+// "through games of" date, so the seasonal path must NOT fire for it.
+const DATED_CAPTURE = capture('massey-ncaaf-2026-09-16.csv');
 
 // ---------------------------------------------------------------------------
 // Synthetic export *payload* fixtures for the transport (./massey-web).
@@ -320,6 +336,81 @@ describe('massey source adapter: normalize', () => {
     assert.deepEqual(result.records, []);
     assert.match(result.unresolvedReason, /header/i);
   });
+
+  it('names the seasonal condition, not a snapshot-write error, when the heading has no date', () => {
+    for (const [league, raw] of Object.entries(PRESEASON_CAPTURES)) {
+      // Guard the fixture itself: the capture must be the undated shape.
+      assert.match(raw.split('\n')[0], /Using games thru Preseason/, `${league} capture is not the preseason shape`);
+
+      const result = normalize({ league, raw });
+      assert.notEqual(result.coverage, 'full', `${league} must not report full coverage`);
+      assert.equal(result.coverage, 'unavailable');
+      assert.deepEqual(result.records, []);
+      assert.equal(result.records.length, 0);
+      assert.equal(result.asOf, null);
+      assert.equal(result.season, null);
+      // The visible cause is the seasonal condition, in Massey's own words -
+      // never the snapshot-write refusal it leads to.
+      assert.match(result.unresolvedReason, /no games played yet/i);
+      assert.match(result.unresolvedReason, /Using games thru Preseason/);
+      assert.doesNotMatch(result.unresolvedReason, /snapshot/i);
+      assert.doesNotMatch(result.unresolvedReason, /invalid (season|asOf)/i);
+    }
+  });
+
+  it('drops the rows because the heading has no date, not because the table is unreadable', () => {
+    // The very same real bytes with one word changed: give the capture a date and
+    // the same table must parse into records. Without this control the
+    // "records dropped" assertion above would pass even if the parser were
+    // simply broken.
+    const undated = PRESEASON_CAPTURES.NBA;
+    const dated = undated.replace('Using games thru Preseason', 'Using games thru Sun, Sep 13, 2026');
+    assert.notEqual(dated, undated);
+
+    const result = normalize({ league: 'NBA', raw: dated });
+    assert.equal(result.coverage, 'full');
+    assert.equal(result.records.length, 30);
+    assert.equal(result.asOf, '2026-09-13');
+    assert.equal(result.season, 2026);
+    assert.ok(result.records.every((record) => validateRatingRecord(record).ok));
+  });
+
+  it('still yields full coverage and records for a dated page (positive control)', () => {
+    const result = normalize({ league: 'NCAAF', raw: DATED_CAPTURE });
+    assert.equal(result.coverage, 'full');
+    assert.equal(result.records.length, 138);
+    assert.equal(result.asOf, '2026-09-13');
+    assert.equal(result.season, 2026);
+    assert.equal(result.unresolvedReason, null);
+  });
+
+  it('reports an export with no "using games thru" heading as unavailable', () => {
+    // A readable table is still unusable without a date: nothing here can be
+    // snapshotted or read as current, so it fails closed rather than yielding
+    // undated records that no consumer can place in time.
+    const result = normalize({ raw: 'Team,Rec,Rat,HFA\nIndiana,2-0,1 9.10,2.14\n' });
+    assert.equal(result.coverage, 'unavailable');
+    assert.deepEqual(result.records, []);
+    assert.match(result.unresolvedReason, /using games thru/i);
+    assert.doesNotMatch(result.unresolvedReason, /preseason/i);
+  });
+
+  it('never pairs full coverage with zero records', () => {
+    const cases = [
+      ['NCAAF', 'nothing useful here\n'],
+      ['NCAAF', HEADER_ONLY_FIXTURE],
+      ['NBA', PRESEASON_CAPTURES.NBA],
+      ['NHL', PRESEASON_CAPTURES.NHL],
+      ['NCAAB', PRESEASON_CAPTURES.NCAAB]
+    ];
+    for (const [league, raw] of cases) {
+      const result = normalize({ league, raw });
+      assert.ok(
+        !(result.records.length === 0 && result.coverage === 'full'),
+        `${league} reported coverage=full with zero records`
+      );
+    }
+  });
 });
 
 describe('massey source adapter: coverage', () => {
@@ -343,11 +434,15 @@ describe('massey source adapter: coverage', () => {
     // precedent uses the division sub-path (`/cf/fbs/ratings`).
     assert.equal(massey.pageUrlFor('NCAAB'), 'https://masseyratings.com/cb/ncaa-d1/ratings');
 
-    const result = normalize({ league: 'NCAAB', raw: NCAAB_CSV_FIXTURE });
+    // Live capture 2026-09-16: the D1 page is out of season, so today it must
+    // report the seasonal condition rather than parse into an undated table. The
+    // route still resolves, which is what this test pins.
+    const result = normalize({ league: 'NCAAB', raw: PRESEASON_CAPTURES.NCAAB });
     assert.equal(result.source, 'massey');
     assert.equal(result.league, 'NCAAB');
-    assert.equal(result.coverage, 'full');
-    assert.ok(result.records.length > 0);
+    assert.equal(result.coverage, 'unavailable');
+    assert.deepEqual(result.records, []);
+    assert.match(result.unresolvedReason, /preseason/i);
     assert.equal(result.sourceUrl, massey.pageUrlFor('NCAAB'));
   });
 

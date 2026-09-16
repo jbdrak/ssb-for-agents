@@ -4,7 +4,7 @@ This directory documents the **manual, local, license-aware** tennis-elo snapsho
 pipeline. There is no downloader, no bundled third-party data, and no network
 access: the snapshot is built from a CSV **you** supply, and the JSON snapshot
 is written where **you** point it — by default outside the repo, under the local
-state dir (`PP_RATINGS_DIR`, default `~/.ssb-for-agents/`).
+state dir (`SSB_RATINGS_DIR`, default `~/.ssb-for-agents/`).
 
 - Importer: [`../tennis-elo-data.js`](../tennis-elo-data.js) (`importMatchData`)
 - Engine: [`../tennis-elo.js`](../tennis-elo.js) (pure chronological surface-aware Elo)
@@ -201,15 +201,19 @@ whitespace collapsed, uppercased — punctuation such as `,` is preserved, so
 Runtime lookup (`loadSnapshot()`) resolves the snapshot in this order:
 
 1. an explicit path override passed to `loadSnapshot()`
-2. `$PP_TENNIS_ELO_SNAPSHOT` — the **local snapshot env var**
-3. `$PP_RATINGS_DIR/tennis-elo-snapshot.json`, else
+2. `$SSB_TENNIS_ELO_SNAPSHOT` — the **local snapshot env var**
+3. `$SSB_RATINGS_DIR/tennis-elo-snapshot.json`, else
    `~/.ssb-for-agents/tennis-elo-snapshot.json` (default)
+
+The pre-rename `$PP_TENNIS_ELO_SNAPSHOT` / `$PP_RATINGS_DIR` spellings are still
+read as a **deprecated fallback**, so an existing shell profile keeps writing and
+reading the same file; the `SSB_` names win when both are set.
 
 The refresh CLI's `--output` default follows the same rule. Point both at the
 same file and the runtime sees exactly what you last refreshed:
 
 ```bash
-export PP_TENNIS_ELO_SNAPSHOT="$HOME/.ssb-for-agents/tennis-elo-snapshot.json"
+export SSB_TENNIS_ELO_SNAPSHOT="$HOME/.ssb-for-agents/tennis-elo-snapshot.json"
 node scripts/refresh-tennis-elo.js --input ~/data/tennis-matches.csv --license "…" --source-url "…" --as-of … --imported-at … --model-version …
 ```
 
@@ -232,19 +236,19 @@ node scripts/refresh-tennis-elo.js --input <csv> --license <text>
     --source-url <url> [options]
 ```
 
-| Flag                        | Required | Meaning                                                                                                                                            |
-| --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--input <csv>`             | yes      | Path to the match CSV (schema above).                                                                                                              |
-| `--license <text>`          | yes      | Source-data license, recorded verbatim in the manifest.                                                                                            |
-| `--as-of <ISO>`             | yes      | Data cutoff `YYYY-MM-DD`; later rows are rejected.                                                                                                 |
-| `--imported-at <ISO>`       | yes      | ISO 8601 import timestamp (e.g. `2026-08-14T12:00:00Z`).                                                                                           |
-| `--model-version <version>` | yes      | Model version string (e.g. `tennis-elo@1.1.0`).                                                                                                    |
-| `--output <json>`           | no       | Snapshot path (default: `$PP_TENNIS_ELO_SNAPSHOT` or `$PP_RATINGS_DIR/tennis-elo-snapshot.json` or `~/.ssb-for-agents/tennis-elo-snapshot.json`).  |
-| `--source-url <url>`        | yes\*    | Source URL, recorded in the manifest. \*Required unless `--engine-only`: the ratings layer refuses a manifest without provenance.                  |
-| `--engine-only`             | no       | Build for the pure Elo engine only. Skips the `--source-url` requirement and produces a snapshot the ratings layer refuses (`missing_provenance`). |
-| `--aliases <json>`          | no       | JSON file of explicit aliases, e.g. `{ "ATP": { "Nole": "Novak Djokovic" } }`. Alias targets must exactly match a player in the built ratings.     |
-| `--dry-run`                 | no       | Parse/build/validate and print the manifest summary without writing any file.                                                                      |
-| `--help`                    | no       | Print usage and exit 0.                                                                                                                            |
+| Flag                        | Required | Meaning                                                                                                                                             |
+| --------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--input <csv>`             | yes      | Path to the match CSV (schema above).                                                                                                               |
+| `--license <text>`          | yes      | Source-data license, recorded verbatim in the manifest.                                                                                             |
+| `--as-of <ISO>`             | yes      | Data cutoff `YYYY-MM-DD`; later rows are rejected.                                                                                                  |
+| `--imported-at <ISO>`       | yes      | ISO 8601 import timestamp (e.g. `2026-08-14T12:00:00Z`).                                                                                            |
+| `--model-version <version>` | yes      | Model version string (e.g. `tennis-elo@1.1.0`).                                                                                                     |
+| `--output <json>`           | no       | Snapshot path (default: `$SSB_TENNIS_ELO_SNAPSHOT` or `$SSB_RATINGS_DIR/tennis-elo-snapshot.json` or `~/.ssb-for-agents/tennis-elo-snapshot.json`). |
+| `--source-url <url>`        | yes\*    | Source URL, recorded in the manifest. \*Required unless `--engine-only`: the ratings layer refuses a manifest without provenance.                   |
+| `--engine-only`             | no       | Build for the pure Elo engine only. Skips the `--source-url` requirement and produces a snapshot the ratings layer refuses (`missing_provenance`).  |
+| `--aliases <json>`          | no       | JSON file of explicit aliases, e.g. `{ "ATP": { "Nole": "Novak Djokovic" } }`. Alias targets must exactly match a player in the built ratings.      |
+| `--dry-run`                 | no       | Parse/build/validate and print the manifest summary without writing any file.                                                                       |
+| `--help`                    | no       | Print usage and exit 0.                                                                                                                             |
 
 Exit codes: `0` success (help, snapshot built, or dry-run validated); `1` usage,
 input, or build error — an actionable message goes to stderr with no stack dump

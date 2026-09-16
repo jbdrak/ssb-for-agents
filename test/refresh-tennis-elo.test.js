@@ -76,6 +76,10 @@ function lookupMatch(snapshotInput) {
 function runCli(args, dir, extraEnv = {}) {
   const env = { ...process.env, HOME: dir, USERPROFILE: dir, PP_RATINGS_DIR: dir, ...extraEnv };
   delete env.PP_TENNIS_ELO_SNAPSHOT;
+  // The canonical names are read FIRST, so an ambient export would win over the
+  // deprecated aliases this harness deliberately pins.
+  delete env.SSB_TENNIS_ELO_SNAPSHOT;
+  delete env.SSB_RATINGS_DIR;
   delete env.DEBUG;
   delete env.PP_DEBUG;
   return spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', env, cwd: dir });

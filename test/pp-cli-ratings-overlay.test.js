@@ -55,6 +55,8 @@ function scanResults() {
         {
           gameId: 'g1',
           game: 'Michigan vs Ohio State',
+          // Real plays carry the event start; the recency gate needs it.
+          start: '2026-09-16T23:00:00Z',
           league: 'NCAAF',
           market: 'Moneyline',
           selection: 'Michigan',
@@ -70,6 +72,7 @@ function scanResults() {
         {
           gameId: 'g2',
           game: 'Ohio State vs Penn State',
+          start: '2026-09-17T19:00:00Z',
           league: 'NCAAF',
           market: 'Moneyline',
           selection: 'Penn State',
@@ -150,10 +153,13 @@ function withTempEnv(t, { withSnapshot = true } = {}) {
   const previous = {
     PP_RATINGS_DIR: process.env.PP_RATINGS_DIR,
     PP_RECORD_LEDGER: process.env.PP_RECORD_LEDGER,
+    SSB_RATINGS_DIR: process.env.SSB_RATINGS_DIR,
     SSB_RATINGS_OVERLAY: process.env.SSB_RATINGS_OVERLAY
   };
   process.env.PP_RATINGS_DIR = ratingsDir;
   process.env.PP_RECORD_LEDGER = ledgerPath;
+  // The canonical name is read FIRST; an ambient export would decide the dir.
+  delete process.env.SSB_RATINGS_DIR;
   delete process.env.SSB_RATINGS_OVERLAY;
 
   if (withSnapshot) {

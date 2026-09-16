@@ -10,8 +10,9 @@
  * timestamp (--as-of, --imported-at) is supplied explicitly by the caller.
  * The server never refreshes at startup — this command is manual-only.
  *
- * The snapshot lands in the local state dir (`PP_RATINGS_DIR`, default
- * `~/.ssb-for-agents/`), never the repo. `--dry-run` parses, builds, and
+ * The snapshot lands in the local state dir (`SSB_RATINGS_DIR`, default
+ * `~/.ssb-for-agents/`), never the repo; the pre-rename `PP_RATINGS_DIR` is
+ * still honoured as a deprecated fallback. `--dry-run` parses, builds, and
  * validates via `importMatchData({ write: false })` and writes nothing at all.
  *
  * Usage:
@@ -67,9 +68,10 @@ Required for the ratings layer:
                          never yield a single rating.
 
 Options:
-  --output <json>        Snapshot output path. Default: $PP_TENNIS_ELO_SNAPSHOT
-                         or $PP_RATINGS_DIR/tennis-elo-snapshot.json
+  --output <json>        Snapshot output path. Default: $SSB_TENNIS_ELO_SNAPSHOT
+                         or $SSB_RATINGS_DIR/tennis-elo-snapshot.json
                          or ~/.ssb-for-agents/tennis-elo-snapshot.json.
+                         (The pre-rename $PP_* spellings still work.)
   --engine-only          Build a snapshot for the pure Elo engine only. Skips the
                          --source-url requirement and produces a snapshot the
                          ratings layer refuses (reasonKind: missing_provenance).

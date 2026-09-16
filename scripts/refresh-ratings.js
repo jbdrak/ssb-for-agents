@@ -7,7 +7,7 @@
  *
  * Ratings are a dated benchmark layer, never a live ranking input: this script
  * only reads the free third-party pages and writes normalized snapshots to the
- * local state dir (`PP_RATINGS_DIR`, default `~/.ssb-for-agents/ratings/`) via
+ * local state dir (`SSB_RATINGS_DIR`, default `~/.ssb-for-agents/ratings/`) via
  * `lib/ssb-ratings-snapshot.js`. No PropProfessor client (lib/ssb-api.js), no
  * auth, no SSB endpoint is imported or called anywhere on this path, which is
  * what makes a refresh schedulable — same category as
@@ -38,6 +38,11 @@ const massey = require('../lib/ratings-sources/massey');
 const masseyWeb = require('../lib/ratings-sources/massey-web');
 const sagarin = require('../lib/ratings-sources/sagarin');
 const sasser = require('../lib/ratings-sources/sasser');
+// The layer's one recency rule and age arithmetic. The refresh summary asks a
+// different question from the attach gate ("has this source gone quiet?" against
+// our fetch time, not "does this record describe this event?"), so it uses the
+// looser display window - but the same implementation, never a second copy.
+const { REFRESH_STALE_AFTER_DAYS: STALE_AFTER_DAYS, ageInDays } = require('../lib/ssb-ratings-recency');
 
 const ADAPTERS = Object.freeze({
   massey: {
@@ -94,11 +99,27 @@ function rowFor(source, league, status, extra = {}) {
     status,
     asOf: null,
     fetchedAt: null,
+    ageDays: null,
+    stale: null,
     recordCount: 0,
     coverage: null,
+    coverageReason: null,
     reason: null,
     ...extra
   };
+}
+
+// A source's own "through games of" heading can sit far behind the page we just
+// fetched: in the 2026-09-16 capture sagarin's college-basketball and MLS pages
+// are frozen final-ratings pages (asOf 2023-04-03 and 2024-12-07). Age is
+// therefore printed per pair so a stale source can never read as live. This
+// mirrors the snapshot store's cutoff-based `stale` on read; the threshold is a
+// display default, not a data rule - defined, with the age arithmetic, alongside
+// the attach-time window in lib/ssb-ratings-recency.js.
+function resolveNowMs(now) {
+  if (now instanceof Date && Number.isFinite(now.getTime())) return now.getTime();
+  const parsed = typeof now === 'string' ? Date.parse(now) : NaN;
+  return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
 /**
@@ -140,12 +161,15 @@ async function refreshPair(adapter, requestedLeague, context) {
       method
     });
     const recordCount = Array.isArray(normalized.records) ? normalized.records.length : 0;
+    const ageDays = ageInDays(normalized.asOf, resolveNowMs(now));
 
     if (normalized.coverage === 'unavailable' || recordCount === 0) {
       return rowFor(adapter.source, normalized.league || displayLeague(requestedLeague), 'unavailable', {
         asOf: normalized.asOf || null,
         fetchedAt: normalized.fetchedAt || null,
+        ageDays,
         coverage: normalized.coverage || 'unavailable',
+        coverageReason: normalized.coverageReason || null,
         reason: normalized.unresolvedReason || `${adapter.source} published no readable rows`
       });
     }
@@ -153,8 +177,11 @@ async function refreshPair(adapter, requestedLeague, context) {
     const row = rowFor(adapter.source, normalized.league, 'ok', {
       asOf: normalized.asOf || null,
       fetchedAt: normalized.fetchedAt || null,
+      ageDays,
+      stale: ageDays === null ? null : ageDays > STALE_AFTER_DAYS,
       recordCount,
       coverage: normalized.coverage,
+      coverageReason: normalized.coverageReason || null,
       sourceUrl: normalized.sourceUrl || fetched.sourceUrl || null,
       path: null
     });
@@ -174,6 +201,12 @@ async function refreshPair(adapter, requestedLeague, context) {
       if (!saved.ok) {
         row.status = 'error';
         row.recordCount = 0;
+        // Fail closed: `coverage: 'full'` must never sit beside zero records, and
+        // a refused write means nothing is available for this pair. Without this
+        // the row read `records=0 coverage=full`, which is the contradiction a
+        // reader noticed - and it is what made a benign seasonal page look like
+        // an adapter error.
+        row.coverage = 'unavailable';
         row.reason = `snapshot not written: ${(saved.errors || []).join('; ')}`;
       } else {
         row.path = saved.path;
@@ -260,7 +293,10 @@ function formatSummary(result) {
       `records=${row.recordCount}`,
       `coverage=${row.coverage || '-'}`
     ];
+    if (typeof row.ageDays === 'number') parts.push(`age=${row.ageDays}d`);
+    if (row.stale === true) parts.push('stale=true');
     if (row.path) parts.push(`path=${row.path}`);
+    if (row.coverageReason) parts.push(`coverageReason=${row.coverageReason}`);
     if (row.reason) parts.push(`reason=${row.reason}`);
     return parts.join(' ');
   });
@@ -289,6 +325,26 @@ function parseArgs(argv) {
   return flags;
 }
 
+// A downstream consumer (e.g. `... | head -5`, or a pager the user quits) can
+// close stdout before this script finishes writing its summary. That is not a
+// script failure: behave like a native tool stopped by SIGPIPE and exit quietly
+// with 0. Any other stdout error is a real I/O failure and must still surface,
+// so only EPIPE is special-cased. Same guard as scripts/refresh-tennis-elo.js.
+// The MEASURED effect differs by write path, though: that script uses
+// `process.stdout.write`, which crashes unhandled, while this one writes via
+// `console.log`, which Node's Console swallows when no 'error' listener exists.
+// So here the guard turns a spurious exit 1 (e.g. `... | head`) into a clean 0
+// rather than suppressing a stack trace. `bin/pp-cli.js` has no equivalent, so
+// this is the only guard shape in the repo.
+function installStdoutEpipeGuard() {
+  process.stdout.on('error', (err) => {
+    if (err && err.code === 'EPIPE') {
+      process.exit(0);
+    }
+    throw err;
+  });
+}
+
 async function main(argv = process.argv.slice(2)) {
   const flags = parseArgs(argv);
   const result = await refreshRatings({
@@ -309,6 +365,13 @@ async function main(argv = process.argv.slice(2)) {
 }
 
 if (require.main === module) {
+  // Installed only when this file IS the entry point, unlike
+  // refresh-tennis-elo.js which arms it at module load: this module is
+  // `require`d by test/refresh-ratings.test.js, and arming a process-wide
+  // stdout handler (one that calls process.exit) inside the test runner would
+  // be a side effect on unrelated output. The guard still protects every real
+  // invocation, which is where a closed stdout can happen.
+  installStdoutEpipeGuard();
   main()
     .then((code) => {
       process.exitCode = code;
