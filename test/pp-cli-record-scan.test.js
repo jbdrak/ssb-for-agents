@@ -235,4 +235,20 @@ describe('pp-cli --record-scan', () => {
     assert.equal(ledger.scans.length, 2, 'changed play identities do not collide');
     assert.notEqual(ledger.scans[0].scanFingerprint, ledger.scans[1].scanFingerprint);
   });
+
+  it('carries the de-vigged fair probability through to the ledger feature snapshot', async (t) => {
+    const env = withTempEnv(t);
+    const results = makeResults();
+    results[0].plays[0] = { ...results[0].plays[0], marketFairProbability: 0.5312 };
+    await runScan({ handlerResults: results, flags: { 'record-scan': true } });
+
+    const ledger = JSON.parse(fs.readFileSync(env.ledgerPath, 'utf8'));
+    const recorded = ledger.candidates.find((candidate) => candidate.selection === 'Yankees');
+    assert.ok(recorded, 'the play was recorded');
+    assert.equal(
+      recorded.featureSnapshot.marketFairProbability,
+      0.5312,
+      'the fair close survives the formatter into the ledger'
+    );
+  });
 });

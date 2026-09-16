@@ -267,13 +267,27 @@ into the ledger.
 the two gates below. It reads the snapshot store and the tracker ledger and
 prints, per source, the records seen, the rows joined, whether the source can
 produce a probability at all (and why not when it cannot), and its sample before
-any score; then the market-relative gate, whose only input today is an explicit
-`--markets <file>` (no producer writes de-vigged closes yet). The outcomes it
-scores against come from settled **moneyline** bets in the ledger: a win
-probability is a moneyline concept, and only a moneyline result names the game's
-winner, so run-line / handicap / total settlements are never converted into one.
-The gate reports `sample=0` until settled moneyline outcomes exist for a league a
+any score; then the market-relative gate. The outcomes it scores against come
+from settled **moneyline** bets in the ledger: a win probability is a moneyline
+concept, and only a moneyline result names the game's winner, so run-line /
+handicap / total settlements are never converted into one. The gate reports
+`sample=0` until settled moneyline outcomes exist for a league a
 probability-carrying source covers (Sagarin: NCAAF/NFL; tennis Elo: TENNIS).
+
+**The de-vigged close.** A scan row now carries `marketFairProbability`: the
+decision-time fair price for that side, derived in the candidate mapper
+(`lib/screen-fair-probability.js`) from the market's own two-sided book prices
+(`allBookOdds`), which survive to the mapper on every row shape. It is the mean of
+each book's own de-vig, `p(own) / (p(own) + p(other))`, over the books that quote
+BOTH legs; a one-legged book is skipped and an unresolvable side yields `null`
+rather than the single-sided implied probability that still carries the hold. It
+is a DECISION-time price, never a game-time close, and is never presented as one.
+`--record-scan` writes it into the candidate feature snapshot, so the ledger
+accumulates the closes the market-relative gate needs. Feeding those recorded
+closes back into `--evaluate` automatically is deliberately NOT done yet: a market
+input must match a record's own market scope, and the probability-carrying records
+are market-wildcards, so pairing them is a scoping decision, not a wiring
+shortcut. `--markets <file>` remains the explicit way to supply closes.
 
 The Sagarin-only helper `lib/sagarin-external-evaluation.js` is retained and now
 delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
