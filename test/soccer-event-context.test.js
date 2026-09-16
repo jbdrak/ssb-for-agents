@@ -122,8 +122,37 @@ describe('soccer event context', () => {
   it('normalizes feed club spellings to the ESPN name', () => {
     assert.equal(normalizeSoccerTeamName('Athletic Bilbao'), 'athletic club');
     assert.equal(normalizeSoccerTeamName('Deportivo La Coruña'), 'deportivo');
+    assert.equal(normalizeSoccerTeamName('Hapoel Beer Sheva'), 'hapoel beer');
     // A different club that merely shares a leading token must stay distinct.
     assert.notEqual(normalizeSoccerTeamName('Levante Las Planas'), normalizeSoccerTeamName('Levante'));
+  });
+
+  it('resolves a truncated ESPN club name on a neutral-venue home side', async () => {
+    // ESPN lists Hapoel Be'er Sheva as "Hapoel Be'er" and files the game at a
+    // neutral ground (Giulesti Stadium), which is exactly why venue order is
+    // corroborated rather than inferred.
+    const fetchImpl = async () =>
+      scoreboardResponse([
+        event({
+          date: '2026-09-16T19:00:00Z',
+          home: "Hapoel Be'er",
+          away: 'Dinamo Zagreb',
+          homeShort: "Hapoel Be'er",
+          awayShort: 'Dinamo Zagreb'
+        })
+      ]);
+    const context = await resolveSoccerEventContext(
+      row({
+        leagueName: 'Europa League',
+        start: '2026-09-16T19:00:00.000Z',
+        homeTeam: 'Hapoel Beer Sheva',
+        awayTeam: 'Dinamo Zagreb'
+      }),
+      { fetchImpl }
+    );
+    assert.equal(context.resolved, true);
+    assert.equal(context.homeTeam, "Hapoel Be'er");
+    assert.equal(context.awayTeam, 'Dinamo Zagreb');
   });
 
   it('resolves a feed/ESPN spelling difference on the real La Liga pair', async () => {
