@@ -27,6 +27,8 @@ const { getSoccerEventIdentity } = require(PROJECT + '/lib/soccer-event-identity
 const { resolveScanLimit } = require(PROJECT + '/lib/ssb-scan-limit');
 const { correctTennisTimes } = require(PROJECT + '/lib/ssb-tennis');
 const { extractEventLinkRows, groupEventLinks } = require(PROJECT + '/lib/ssb-event-links');
+const { listSnapshots, loadSnapshot } = require(PROJECT + '/lib/ssb-ratings-snapshot');
+const { applyRatingsOverlay } = require(PROJECT + '/lib/ssb-ratings-overlay');
 const reviewRecord = require(PROJECT + '/scripts/review-record');
 
 // ── book alias resolution ──────────────────────────────────────
@@ -198,6 +200,7 @@ Commands:
   wallets    Top Polymarket wallets vs a book (bet/pass)
   fantasy    Fantasy optimizer props
   health     Auth + backend health check
+  ratings    External-ratings snapshots (Massey/Sagarin/Sasser), read-only
   --mcp      Run as MCP stdio server (for Claude Desktop, Cursor, etc.)
 
 Run "pp <command> --help" for command-specific help.
@@ -226,6 +229,8 @@ Flags:
   --props                   Include player prop markets (Player Points, etc.) in the scan
   --wallets [N]             Overlay top Polymarket wallets' live positions on plays (default off; N = number of wallets, default 20)
   --no-wallets              Explicitly disable the wallet overlay (only meaningful with --wallets)
+  --ratings-overlay         Attach external-ratings benchmark records (Massey/Sagarin/Sasser) to plays as 'ratings' (default off; SSB_RATINGS_OVERLAY=true)
+  --no-ratings-overlay      Explicitly disable the ratings overlay
 
 Examples:
   pp scan tennis wnba
@@ -422,6 +427,25 @@ Flags:
   health: `pp health
 
 Check auth + backend health. Always JSON output.
+`,
+  ratings: `pp ratings [flags]
+
+List the external-ratings benchmark snapshots (Massey / Sagarin / Sasser) that
+node scripts/refresh-ratings.js wrote to the local state dir
+(PP_RATINGS_DIR, default ~/.ssb-for-agents/ratings/).
+
+Read-only: this command never fetches and never contacts PropProfessor.
+
+Flags:
+  --source <a,b>            Filter by source (massey, sagarin, sasser)
+  --league <a,b>            Filter by league (CFB/CBB aliases map to NCAAF/NCAAB)
+  --season <a,b>            Filter by season
+  --show                    Print per-snapshot detail (method, asOf, fetchedAt, records, path)
+  -j, --json                Raw JSON output
+
+Examples:
+  pp ratings --source sagarin --league CFB --show
+  pp ratings --source massey,sasser --json
 `
 };
 
@@ -1152,6 +1176,65 @@ async function applyScanWalletOverlay(res, flags) {
   }
 }
 
+// ── external-ratings shadow overlay (opt-in) ─────────────────────
+// Massey / Sagarin / Sasser benchmark records are a SHADOW label: they attach
+// to final candidate rows as `row.ratings` for later evaluation and never feed
+// the ranker, tiers, verdicts, or edge. OPT-IN via --ratings-overlay (or
+// SSB_RATINGS_OVERLAY=true) because it reads the snapshot store; a normal scan
+// must not pay for it. Disable explicitly with --no-ratings-overlay.
+
+/** True when the caller asked for the external-ratings shadow overlay. */
+function ratingsOverlayEnabled(flags = {}) {
+  if (flags['no-ratings-overlay'] || flags.noRatingsOverlay) return false;
+  if (flags['ratings-overlay'] || flags.ratingsOverlay) return true;
+  return process.env.SSB_RATINGS_OVERLAY === 'true';
+}
+
+/**
+ * Read every record in the external-ratings snapshot store
+ * (lib/ssb-ratings-snapshot.js). Fails closed per file: an unreadable,
+ * invalid, or stale snapshot contributes nothing rather than throwing. The
+ * live overlay supplies no point-in-time cutoff, so the store's `stale` flag
+ * is inert here by design; the guard stays wired for callers that do.
+ *
+ * @returns {Array<Record<string, any>>}
+ */
+function loadRatingsRecords() {
+  const listed = listSnapshots();
+  if (!listed.ok) return [];
+  const records = [];
+  for (const summary of listed.snapshots) {
+    if (!summary.valid) continue;
+    const loaded = loadSnapshot(summary.source, summary.league, summary.season);
+    if (!loaded.ok || loaded.stale || !loaded.snapshot) continue;
+    for (const record of loaded.snapshot.records) records.push(record);
+  }
+  return records;
+}
+
+/**
+ * Attach external-ratings benchmark records to the final scan rows in place.
+ * Pure enrichment: it only ADDS `row.ratings` and can never change a ranking,
+ * tier, verdict, edge, or score. Default OFF — when disabled it returns before
+ * touching the snapshot store, so a normal scan pays nothing. A read failure
+ * degrades to a silent no-op; enrichment must never break scan output.
+ *
+ * @param {Object} res - scan response ({ data: { results } } or { results })
+ * @param {Object} [flags]
+ * @returns {{applied: boolean, records: number}}
+ */
+async function applyScanRatingsOverlay(res, flags = {}) {
+  if (!ratingsOverlayEnabled(flags)) return { applied: false, records: 0 };
+  try {
+    const results = res?.data?.results || res?.results || [];
+    const records = loadRatingsRecords();
+    applyRatingsOverlay(results, { ratings: records });
+    return { applied: true, records: records.length };
+  } catch {
+    return { applied: false, records: 0 };
+  }
+}
+
 async function cmdScan(handlers, positional, flags, client) {
   const FAST_LEAGUES = ['MLB', 'Tennis', 'UFC', 'NBA', 'WNBA'];
   let leagues =
@@ -1298,6 +1381,13 @@ async function cmdScan(handlers, positional, flags, client) {
     // Polymarket on every run, so we don't fire them on a plain scan.
     await applyScanWalletOverlay(res, flags);
     phaseMark = logPhase('scan.wallet_overlay', phaseMark);
+
+    // External-ratings shadow overlay (opt-in). Pure enrichment: attaches
+    // `row.ratings` for later evaluation, never touches a rank/tier/verdict
+    // field. Runs before render so the same rows reach both stdout and the
+    // --record-scan ledger snapshot. Zero cost when disabled (the default).
+    await applyScanRatingsOverlay(res, flags);
+    phaseMark = logPhase('scan.ratings_overlay', phaseMark);
 
     renderScanOutput(res, { flags, leagues, marketList, book, targetTiers, cardWindow, limit });
     logPhase('scan.render', phaseMark);
@@ -2319,6 +2409,100 @@ async function cmdHealth(handlers) {
   console.log(JSON.stringify(res, null, 2));
 }
 
+// ── ratings (external ratings snapshots) ─────────────────────────
+
+// The frontend/plan vocabulary says CFB/CBB; the canonical snapshot league is
+// NCAAF/NCAAB.
+const RATINGS_LEAGUE_ALIASES = { CFB: 'NCAAF', CBB: 'NCAAB' };
+
+function canonicalRatingsLeague(league) {
+  const code = String(league || '')
+    .trim()
+    .toUpperCase();
+  return RATINGS_LEAGUE_ALIASES[code] || code;
+}
+
+function ratingsList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value !== 'string') return [];
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Read the external-ratings snapshots (Massey / Sagarin / Sasser) that
+ * `node scripts/refresh-ratings.js` wrote to the local state dir
+ * (`PP_RATINGS_DIR`, default `~/.ssb-for-agents/ratings/`).
+ *
+ * Read-only on purpose: this command never fetches and never touches a
+ * PropProfessor client, so it is safe to run anywhere the network is not.
+ * Fetching is the refresh script's job.
+ */
+async function cmdRatings(positional, flags = {}) {
+  const jsonOut = flags.j === true || flags.json === true;
+  const show = flags.show === true;
+  const sources = ratingsList(flags.source).map((source) => source.toLowerCase());
+  const leagues = ratingsList(flags.league).map(canonicalRatingsLeague);
+  const seasons = ratingsList(flags.season)
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value));
+
+  const listed = listSnapshots();
+  if (!listed.ok) throw new Error('ratings: ' + (listed.errors || []).join('; '));
+
+  let snapshots = listed.snapshots;
+  if (sources.length) snapshots = snapshots.filter((snapshot) => sources.includes(snapshot.source));
+  if (leagues.length) snapshots = snapshots.filter((snapshot) => leagues.includes(snapshot.league));
+  if (seasons.length) snapshots = snapshots.filter((snapshot) => seasons.includes(snapshot.season));
+
+  if (jsonOut) {
+    console.log(JSON.stringify({ snapshots }, null, 2));
+    return { ok: true, snapshots };
+  }
+
+  if (snapshots.length === 0) {
+    console.log(
+      'No ratings snapshots found (run: node scripts/refresh-ratings.js --source <sources> --league <league>)'
+    );
+    return { ok: true, snapshots: [] };
+  }
+
+  if (!show) {
+    for (const snapshot of snapshots) {
+      if (!snapshot.valid) {
+        console.log(
+          `${snapshot.source} ${snapshot.league} ${snapshot.season} invalid (${(snapshot.errors || []).join('; ')})`
+        );
+        continue;
+      }
+      console.log(
+        `${snapshot.source} ${snapshot.league} ${snapshot.season} records=${snapshot.recordCount}` +
+          ` asOf=${snapshot.asOf || '-'} fetchedAt=${snapshot.fetchedAt || '-'}`
+      );
+    }
+    return { ok: true, snapshots };
+  }
+
+  for (const snapshot of snapshots) {
+    if (!snapshot.valid) {
+      console.log(`\n${B}${snapshot.source} ${snapshot.league} ${snapshot.season}${R}  invalid`);
+      console.log(`  errors: ${(snapshot.errors || []).join('; ')}`);
+      console.log(`  path: ${snapshot.path}`);
+      continue;
+    }
+    console.log(`\n${B}${snapshot.source} ${snapshot.league} ${snapshot.season}${R}`);
+    console.log(`  method: ${snapshot.method}`);
+    console.log(`  asOf: ${snapshot.asOf}  |  fetchedAt: ${snapshot.fetchedAt}`);
+    console.log(`  records: ${snapshot.recordCount}`);
+    console.log(`  sourceUrl: ${snapshot.sourceUrl}`);
+    console.log(`  sourceHash: ${snapshot.sourceHash}`);
+    console.log(`  path: ${snapshot.path}`);
+  }
+  return { ok: true, snapshots };
+}
+
 // ── main ────────────────────────────────────────────────────────
 
 async function main() {
@@ -2424,6 +2608,9 @@ async function main() {
     case 'health':
       await cmdHealth(handlers);
       break;
+    case 'ratings':
+      await cmdRatings(positional, flags);
+      break;
     default:
       console.error('Unknown command: ' + (resolvedCmd || command));
       printHelp('');
@@ -2455,6 +2642,9 @@ module.exports = {
   cmdRecordCard,
   cmdRecord,
   cmdLinks,
+  cmdRatings,
+  ratingsOverlayEnabled,
+  applyScanRatingsOverlay,
   resolveWalletDate,
   parseCardInput,
   formatScan,
