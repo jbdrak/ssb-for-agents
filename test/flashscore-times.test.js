@@ -134,6 +134,44 @@ const TEST_CACHE = {
       tournament: 'Los Cabos',
       category: 'ATP - SINGLES',
       surface: 'hard'
+    },
+    {
+      // Flashscore stores the FIRST surname ("Maristany G.") while PP sends the
+      // LAST ("Reales"). The two share no string at all, so the pairing can only
+      // match if the caller expands the PP surname to a full name first.
+      id: 'valencia001',
+      time: '11:15',
+      foundOn: '2026-09-16',
+      status: 'scheduled',
+      home: 'Maristany G.',
+      away: 'Bassols M.',
+      tournament: 'Valencia (Spain)',
+      category: 'CHALLENGER WOMEN - SINGLES',
+      surface: ''
+    },
+    {
+      // Two entries whose surnames both appear in one query. A pairing like this
+      // must resolve to nothing rather than picking a row.
+      id: 'ambig001',
+      time: '10:00',
+      foundOn: '2026-09-16',
+      status: 'scheduled',
+      home: 'Alpha One A.',
+      away: 'Beta One B.',
+      tournament: 'Ambiguous Open',
+      category: 'ATP - SINGLES',
+      surface: ''
+    },
+    {
+      id: 'ambig002',
+      time: '11:00',
+      foundOn: '2026-09-16',
+      status: 'scheduled',
+      home: 'Alpha Two C.',
+      away: 'Beta Two D.',
+      tournament: 'Ambiguous Open',
+      category: 'ATP - SINGLES',
+      surface: ''
     }
   ]
 };
@@ -254,6 +292,43 @@ describe('flashscore-times', () => {
     it('returns null for unknown match', () => {
       const m = mod.lookupMatchTime('Djokovic', 'Alcaraz');
       assert.equal(m, null);
+    });
+  });
+
+  describe('full-name bridging (PP surname != Flashscore surname)', () => {
+    it('matches when the Flashscore surname appears in the expanded PP name', () => {
+      // The caller (lib/ssb-tennis.js) expands the PP surname via PLAYER_NAMES.
+      const match = mod.lookupMatchTime('Guiomar Maristany Zuleta de Reales', 'Marina Bassols Ribera');
+      assert.ok(match, 'expected the expanded full names to pair with Maristany/Bassols');
+      assert.equal(match.time, '11:15');
+      assert.equal(match.tournament, 'Valencia (Spain)');
+    });
+
+    it('does not match when the cached surname is absent from the query', () => {
+      assert.equal(mod.lookupMatchTime('Guiomar Something Else', 'Marina Bassols Ribera'), null);
+      assert.equal(mod.lookupMatchTime('Guiomar Maristany Zuleta de Reales', 'Nobody At All'), null);
+    });
+
+    it('resolves to nothing when two cached rows satisfy the same pairing', () => {
+      // Both Alpha/Beta rows are candidates for this query, so a row must
+      // not be pinned to a guess - fail closed instead.
+      const ambiguous = mod.lookupMatchTime('Alpha One Two', 'Beta One Two');
+      assert.equal(ambiguous, null);
+    });
+
+    it('keeps the single-surname path unchanged', () => {
+      const match = mod.lookupMatchTime('Shapovalov', 'Pacheco Mendez');
+      assert.ok(match);
+      assert.equal(match.time, '22:10');
+      // A single surname still must hit the cached entry's FINAL token.
+      assert.equal(mod.lookupMatchTime('Nonexistent', 'Pacheco Mendez'), null);
+    });
+
+    it('the PP surname expands to a name holding the Flashscore surname', () => {
+      const { resolvePlayerName } = require('../lib/ssb-tennis');
+      assert.equal(resolvePlayerName('Reales'), 'Guiomar Maristany Zuleta de Reales');
+      assert.equal(resolvePlayerName('Ribera'), 'Marina Bassols Ribera');
+      assert.equal(resolvePlayerName('UnmappedSurname'), null, 'unmapped names stay unmapped, never guessed');
     });
   });
 
