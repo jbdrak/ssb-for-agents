@@ -200,7 +200,7 @@ Commands:
   wallets    Top Polymarket wallets vs a book (bet/pass)
   fantasy    Fantasy optimizer props
   health     Auth + backend health check
-  ratings    External-ratings snapshots (Massey/Sagarin/Sasser), read-only
+  ratings    External-ratings benchmark snapshots, read-only
   --mcp      Run as MCP stdio server (for Claude Desktop, Cursor, etc.)
 
 Run "pp <command> --help" for command-specific help.
@@ -229,7 +229,7 @@ Flags:
   --props                   Include player prop markets (Player Points, etc.) in the scan
   --wallets [N]             Overlay top Polymarket wallets' live positions on plays (default off; N = number of wallets, default 20)
   --no-wallets              Explicitly disable the wallet overlay (only meaningful with --wallets)
-  --ratings-overlay         Attach external-ratings benchmark records (Massey/Sagarin/Sasser) to plays as 'ratings' (default off; SSB_RATINGS_OVERLAY=true)
+  --ratings-overlay         Attach external-ratings benchmark records to plays as 'ratings' (default off; SSB_RATINGS_OVERLAY=true)
   --no-ratings-overlay      Explicitly disable the ratings overlay
 
 Examples:
@@ -430,9 +430,9 @@ Check auth + backend health. Always JSON output.
 `,
   ratings: `pp ratings [flags]
 
-List the external-ratings benchmark snapshots (Massey / Sagarin / Sasser) that
+List the external-ratings benchmark snapshots that
 node scripts/refresh-ratings.js wrote to the local state dir
-(PP_RATINGS_DIR, default ~/.ssb-for-agents/ratings/).
+(SSB_RATINGS_DIR, default ~/.ssb-for-agents/ratings/).
 
 Read-only: this command never fetches and never contacts PropProfessor.
 
@@ -1177,7 +1177,7 @@ async function applyScanWalletOverlay(res, flags) {
 }
 
 // ── external-ratings shadow overlay (opt-in) ─────────────────────
-// Massey / Sagarin / Sasser benchmark records are a SHADOW label: they attach
+// External-ratings benchmark records are a SHADOW label: they attach
 // to final candidate rows as `row.ratings` for later evaluation and never feed
 // the ranker, tiers, verdicts, or edge. OPT-IN via --ratings-overlay (or
 // SSB_RATINGS_OVERLAY=true) because it reads the snapshot store; a normal scan
@@ -1193,9 +1193,15 @@ function ratingsOverlayEnabled(flags = {}) {
 /**
  * Read every record in the external-ratings snapshot store
  * (lib/ssb-ratings-snapshot.js). Fails closed per file: an unreadable,
- * invalid, or stale snapshot contributes nothing rather than throwing. The
- * live overlay supplies no point-in-time cutoff, so the store's `stale` flag
- * is inert here by design; the guard stays wired for callers that do.
+ * invalid, or stale snapshot contributes nothing rather than throwing.
+ *
+ * This aggregate load deliberately supplies no point-in-time cutoff: it runs
+ * once for the whole slate, not per row, so it has no event to compare against
+ * and the store's `stale` flag stays inert here. Recency is enforced where the
+ * event IS known - per row, at the join, in `applyRatingsOverlay`
+ * (lib/ssb-ratings-overlay.js) against each row's own event start. Do not arm a
+ * cutoff here instead: one slate-wide date cannot say whether a snapshot
+ * describes any particular game.
  *
  * @returns {Array<Record<string, any>>}
  */
@@ -2432,9 +2438,9 @@ function ratingsList(value) {
 }
 
 /**
- * Read the external-ratings snapshots (Massey / Sagarin / Sasser) that
+ * Read the external-ratings benchmark snapshots that
  * `node scripts/refresh-ratings.js` wrote to the local state dir
- * (`PP_RATINGS_DIR`, default `~/.ssb-for-agents/ratings/`).
+ * (`SSB_RATINGS_DIR`, default `~/.ssb-for-agents/ratings/`).
  *
  * Read-only on purpose: this command never fetches and never touches a
  * PropProfessor client, so it is safe to run anywhere the network is not.

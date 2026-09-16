@@ -17,6 +17,7 @@ const assert = require('node:assert/strict');
 
 const { applyRatingsOverlay } = require('../lib/ssb-ratings-overlay');
 const { normalizeEvaluationRows, evaluateRatingSources } = require('../lib/ssb-external-ratings-evaluation');
+const { formatQuickScreenBets } = require('../lib/ssb-formatter');
 const recency = require('../lib/ssb-ratings-recency');
 
 const HASH = 'a'.repeat(64);
@@ -69,6 +70,29 @@ function masseyRecord(asOf) {
     neutral: null,
     ratingA: 88.1,
     ratingB: 88.1,
+    coverage: 'full',
+    matchStatus: 'unmatched'
+  };
+}
+
+// Team-scoped Massey MLB row (`teamA === teamB`): a rating with no opponent.
+// Mirrors the real snapshot in the local state dir
+// (`~/.ssb-for-agents/ratings/massey-MLB-2026.json`, asOf 2026-09-14).
+function masseyMlbRecord(asOf, team) {
+  return {
+    source: 'massey',
+    method: 'overall',
+    league: 'MLB',
+    season: 2026,
+    asOf,
+    fetchedAt: FETCHED_AT,
+    sourceUrl: 'https://masseyratings.com/mlb/mlb/ratings',
+    sourceHash: HASH,
+    teamA: team,
+    teamB: team,
+    neutral: null,
+    ratingA: 8.43,
+    ratingB: 8.43,
     coverage: 'full',
     matchStatus: 'unmatched'
   };
@@ -181,6 +205,68 @@ describe('ratings recency gate at attach time (overlay)', () => {
     assert.match(entry.reason, /no event start/);
   });
 
+  it('attaches on the EXACT shape a real --ratings-overlay scan row carries', () => {
+    // Regression: the scan pipeline used to hand the overlay a row whose only
+    // start-ish fields were `startCST` (a year-less display string the CLI
+    // itself emits), `startNote` and `lastMoveAgeMs` - so every populated
+    // source entry withheld with `event_start_unknown` and the whole layer was
+    // inert on real slates (71/71 plays, 0 records attached). The compact scan
+    // row now carries the backend's machine-readable `start` (epoch seconds)
+    // beside the display string, which is the only value that can be dated.
+    const [out] = applyRatingsOverlay(
+      [
+        {
+          game: 'Arizona Diamondbacks vs Miami Marlins',
+          league: 'MLB',
+          market: 'Total Runs',
+          selection: 'Under 9.5',
+          odds: -110,
+          start: 1789618800, // epoch seconds, as /screen sends it
+          startCST: 'Wed, Sep 16, 8:40 PM CT',
+          startNote: null,
+          lastMoveAgeMs: null
+        }
+      ],
+      {
+        ratings: [masseyMlbRecord('2026-09-14', 'Arizona Diamondbacks'), masseyMlbRecord('2026-09-14', 'Miami Marlins')]
+      }
+    );
+
+    const entry = out.ratings.massey;
+    assert.equal(entry.records.length, 2, 'a covering snapshot must attach');
+    assert.equal(entry.asOf, '2026-09-14');
+    assert.notEqual(entry.reasonKind, 'event_start_unknown');
+    assert.equal(entry.withheld, undefined);
+  });
+
+  it('withholds - never guesses - when only the year-less display string is present', () => {
+    // The year-less `startCST` must not be turned into an epoch by inventing a
+    // year: guessing one to feed a recency comparison is the silent wrongness
+    // this layer exists to avoid. No machine-readable start => refuse.
+    const [out] = applyRatingsOverlay(
+      [
+        {
+          game: 'Arizona Diamondbacks vs Miami Marlins',
+          league: 'MLB',
+          market: 'Total Runs',
+          selection: 'Under 9.5',
+          odds: -110,
+          startCST: 'Wed, Sep 16, 8:40 PM CT',
+          startNote: null,
+          lastMoveAgeMs: null
+        }
+      ],
+      {
+        ratings: [masseyMlbRecord('2026-09-14', 'Arizona Diamondbacks'), masseyMlbRecord('2026-09-14', 'Miami Marlins')]
+      }
+    );
+
+    const entry = out.ratings.massey;
+    assert.deepEqual(entry.records, []);
+    assert.equal(entry.reasonKind, 'event_start_unknown');
+    assert.equal(entry.withheld, 2);
+  });
+
   it('fails closed on an undated record rather than attaching it as current', () => {
     const [out] = applyRatingsOverlay([row('2026-09-20T20:00:00Z')], {
       ratings: [sagarinRecord(null)]
@@ -257,5 +343,73 @@ describe('ratings recency gate in the evaluation pipeline', () => {
   it('does not judge a row with no game timestamp (no reference to gate against)', () => {
     const { rows } = normalizeEvaluationRows([evaluationRow({ predictionTimestamp: JUNE_AS_OF })]);
     assert.equal(rows[0].status, 'matched');
+  });
+});
+
+describe('ratings recency gate across the real projection boundary', () => {
+  // The bug this pins: the overlay reads the FINAL scan rows, and the bets-mode
+  // projection (`formatQuickScreenBets` -> `formatBetCompact`) used to keep only
+  // the year-less `startCST` display string, dropping the machine-readable
+  // `start` the ranked row carried. Every source entry then withheld as
+  // `event_start_unknown` and the layer was inert on real slates. A unit test
+  // that feeds a hand-built row straight to `applyRatingsOverlay` cannot see
+  // that, so this one goes through the projection the CLI actually uses.
+  function scanResponse() {
+    return {
+      targetBook: 'NoVigApp',
+      results: [
+        {
+          league: 'MLB',
+          market: 'Total Runs',
+          candidates: [
+            {
+              game: 'Arizona Diamondbacks vs Miami Marlins',
+              league: 'MLB',
+              market: 'Total Runs',
+              selection: 'Under 9.5',
+              odds: -110,
+              start: 1789618800, // as the ranker row carries it
+              startCST: 'Wed, Sep 16, 8:40 PM CT',
+              startNote: null,
+              lastMoveAgeMs: null
+            }
+          ]
+        }
+      ]
+    };
+  }
+
+  it('keeps the machine-readable start through the bets-mode projection', () => {
+    const out = formatQuickScreenBets(scanResponse());
+    const play = out.results[0].plays[0];
+    assert.equal(play.start, 1789618800);
+    assert.equal(play.startCST, 'Wed, Sep 16, 8:40 PM CT');
+  });
+
+  it('attaches records to the projected row instead of withholding them', () => {
+    const out = formatQuickScreenBets(scanResponse());
+    applyRatingsOverlay(out.results, {
+      ratings: [masseyMlbRecord('2026-09-14', 'Arizona Diamondbacks'), masseyMlbRecord('2026-09-14', 'Miami Marlins')]
+    });
+
+    const entry = out.results[0].plays[0].ratings.massey;
+    assert.equal(entry.records.length, 2, 'the projected row must still be dateable');
+    assert.equal(entry.asOf, '2026-09-14');
+    assert.notEqual(entry.reasonKind, 'event_start_unknown');
+  });
+
+  it('still withholds when the projected row lost its start (pre-fix shape)', () => {
+    // Negative control: reproduce the pre-fix projection by deleting `start`
+    // from the projected row. The assertion above must then fail, which is what
+    // makes it a real regression rather than a tautology.
+    const out = formatQuickScreenBets(scanResponse());
+    delete out.results[0].plays[0].start;
+    applyRatingsOverlay(out.results, {
+      ratings: [masseyMlbRecord('2026-09-14', 'Arizona Diamondbacks'), masseyMlbRecord('2026-09-14', 'Miami Marlins')]
+    });
+
+    const entry = out.results[0].plays[0].ratings.massey;
+    assert.deepEqual(entry.records, []);
+    assert.equal(entry.reasonKind, 'event_start_unknown');
   });
 });
