@@ -124,6 +124,27 @@ describe('formatBetCompact', () => {
     assert.equal(formatBetCompact({ selection: 'NoVig Pick', odds: -141, book: 'NoVigApp' }).odds, '58.5%');
     assert.equal(formatBetCompact({ selection: 'FanDuel Pick', odds: -141, book: 'FanDuel' }).odds, -141);
   });
+
+  it('carries the machine-readable start alongside the startCST display string', () => {
+    // The compact shape must keep the backend's own `start` (epoch seconds for
+    // MLB/WNBA/NBA/NFL/NHL, ISO for Soccer/Tennis) because `startCST` is a
+    // year-less display string that cannot be converted to an epoch. Dropping
+    // it left the external-ratings recency gate with no event time to gate on,
+    // so every record was withheld as `event_start_unknown` on a real scan.
+    const start = 1789618800;
+    const result = formatBetCompact({
+      selection: 'Under 9.5',
+      odds: -110,
+      start,
+      startCST: 'Wed, Sep 16, 8:40 PM CT'
+    });
+    assert.equal(result.start, start);
+    assert.equal(result.startCST, 'Wed, Sep 16, 8:40 PM CT');
+  });
+
+  it('reports a null start when the row carries none', () => {
+    assert.equal(formatBetCompact({ selection: 'Test', odds: 100 }).start, null);
+  });
 });
 
 // ---------------------------------------------------------------------------
