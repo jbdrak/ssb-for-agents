@@ -265,10 +265,21 @@ async function runOneHydratedPair(
       debug,
       quickScreenAggregate: true,
       activeAggregatePairCount,
-      aggregatePairCount: leagueMarketPairs.length
+      aggregatePairCount: leagueMarketPairs.length,
+      aggregateHistoryAllocation: args.aggregateHistoryAllocation
     });
 
     let candidates = Array.isArray(spResult?.result) ? spResult.result : [];
+    if (process.env.SSB_DEBUG === 'true' && candidates.length) {
+      // Does the sharp-play row carry the ranker's tier at all? Everything
+      // downstream (validate echo -> final tier) keys off this field, and a
+      // missing field silently becomes the mapper's TIER 4 default.
+      const s = candidates[0];
+      process.stderr.write(
+        `[quick-screen] spRow tier=${s.confidenceTier} tierLive=${s.confidenceTierLive} kai=${s.kaiCall} ` +
+          `score=${s.screenScore} hasTier=${'confidenceTier' in s} keys=${Object.keys(s).length}\n`
+      );
+    }
     if (Array.isArray(spResult?.resultMeta?.unresolvedCandidates)) {
       unresolvedCandidates.push(
         ...spResult.resultMeta.unresolvedCandidates.map((candidate) => ({
@@ -482,6 +493,15 @@ function buildQuickScreenValidationArgs(candidate, entry, args) {
   const validationBooks = executionBook
     ? [executionBook, ...comparisonBooks.filter((book) => book !== executionBook)]
     : comparisonBooks;
+  if (process.env.SSB_DEBUG === 'true') {
+    // Tier provenance matters more than it looks: validate echoes screenTier
+    // back as the authoritative tier for scan-sourced rows, so a missing or
+    // defaulted candidate tier silently rewrites the play's tier downstream.
+    process.stderr.write(
+      `[quick-screen] validateArgs ${candidate.gameId}::${candidate.selection}::${entry.market} ` +
+        `screenTier=${candidate.confidenceTier} screenKai=${candidate.kaiCall} score=${candidate.screenScore}\n`
+    );
+  }
   return {
     league: entry.league,
     gameId: candidate.gameId,
@@ -506,7 +526,18 @@ function buildQuickScreenValidationArgs(candidate, entry, args) {
     screenMovementSourceBook: candidate.movementSourceBook || undefined,
     screenMovementMode: candidate.movementMode || undefined,
     screenMovementDisposition: candidate.movementDisposition || undefined,
-    screenTier: candidate.confidenceTier,
+    // Echo the LIVE tier, not the hysteresis-stable one. In a one-shot scan
+    // process the aggregate ranks the same play more than once (active-pair
+    // probe, EV-first discovery, then the hydrated pass), and
+    // getConfidenceTierStable's evolving tier is the MODE of those in-process
+    // observations. Two thin observations outvote the hydrated one, so
+    // `confidenceTier` came back TIER 4 while `confidenceTierLive` was TIER 1
+    // for the same row. validate echoes screenTier back as the authoritative
+    // tier, so the stable tier leaked a TIER 4 into a BET row, and
+    // applyFinalVerdict's contradictory-tier clamp (BET + TIER 4 -> TIER 2)
+    // then shipped every real TIER 1 play as TIER 2. `rank` never multi-ranks,
+    // which is why it reported TIER 1 all along.
+    screenTier: candidate.confidenceTierLive || candidate.confidenceTier,
     screenKaiCall: candidate.kaiCall,
     screenOdds: candidate.odds ?? candidate.currentOdds ?? undefined,
     screenConsensusBookCount: candidate.consensusBookCount,
@@ -637,6 +668,13 @@ async function runQuickScreenValidation(
         }
       },
       applyValidated: (candidate, validation) => {
+        if (process.env.SSB_DEBUG === 'true') {
+          process.stderr.write(
+            `[quick-screen] validated ${candidate.selection} respTier=${validation?.tier} ` +
+              `respVerdict=${validation?.verdict} summaryDisplay=${validation?.verdictSummary?.displayTier} ` +
+              `candTier=${candidate.confidenceTier} candTierLive=${candidate.confidenceTierLive} candKai=${candidate.kaiCall}\n`
+          );
+        }
         applyValidatedFields(candidate, validation);
         candidate._validated = true;
         applyFinalVerdict(candidate);

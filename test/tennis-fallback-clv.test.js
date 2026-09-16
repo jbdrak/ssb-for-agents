@@ -126,6 +126,14 @@ describe('assignTierFromClv', () => {
   it('returns TIER 2 for null CLV', () => {
     assert.equal(assignTierFromClv(null, 1), 'TIER 2');
   });
+
+  it('never awards TIER 1 for adverse CLV', () => {
+    // Regression: grading on |CLV| let a line that moved AGAINST the play
+    // (-4) ship as TIER 1 while its verdict was CONSIDER.
+    assert.equal(assignTierFromClv(-4, 3), 'TIER 3');
+    assert.equal(assignTierFromClv(-2.5, 3), 'TIER 3');
+    assert.equal(assignTierFromClv(-1.8, 2), 'TIER 3');
+  });
 });
 
 describe('isTennisAlternateLine', () => {

@@ -443,7 +443,14 @@ async function runCompositeToday(ctx, args = {}) {
         validate: true,
         cardWindow: 'today',
         includeResearch: false,
-        lite: true
+        lite: true,
+        // Card-style query: bound the aggregate odds-history allocation. The
+        // composite probes ~35 league×market pairs, and at the full share the
+        // serialized odds-history gate congests and aborts pairs. Measured on
+        // a 35-pair fan-out (default 1200-call share = 80 games/pair): 185s /
+        // 102 plays; 300 (20/pair): 69s / 76 plays; 135 (9/pair): 49s / 48;
+        // 90 (6/pair): 37s / 32. 300 keeps most of the card at ~1/3 the time.
+        aggregateHistoryAllocation: Number(process.env.PP_TODAY_HISTORY_ALLOCATION) || 300
       })
       .catch((err) => ({
         ok: false,

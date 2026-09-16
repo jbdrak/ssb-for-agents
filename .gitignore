@@ -24,3 +24,7 @@ scripts/novig-scan.js
 .commandcode/
 data/snapshots.jsonl
 lib/tennis-schedule-data/flashscore-cache.json
+# Derived tennis-elo snapshots are large third-party-derived data (e.g. Sackmann
+# CC BY-NC-SA): keep them outside the repo (default ~/.ssb-for-agents/). Guard
+# against accidental repo-local writes from scripts/refresh-tennis-elo.js.
+tennis-elo-snapshot.json

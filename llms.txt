@@ -4,7 +4,7 @@ A Model Context Protocol server that gives AI agents access to sharp sports bett
 
 ## Quick start
 - Install from source: `git clone https://github.com/jbdrak/ssb-for-agents.git && cd ssb-for-agents && npm ci && npm link`
-- Auth: `pp-query login` (one-time browser login)
+- Auth: `ssb-query login` (one-time browser login)
 - Wire: add to your MCP client config
 - Verify: `npm run install:verify` (credential-free install verification)
 

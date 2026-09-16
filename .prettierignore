@@ -2,3 +2,8 @@ node_modules
 package-lock.json
 auth.json
 ranked-screen-rows.json
+
+# Captured third-party payloads must stay byte-faithful. Reformatting a vendor
+# HTML page or RSC flight stream would weaken the very fixture that pins the
+# parser against that vendor's real output. Data, not source.
+test/fixtures/**/*.html
