@@ -59,15 +59,26 @@ function withTempEnv(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-cli-record-'));
   const ledgerPath = path.join(dir, 'ledger.json');
   const snapshotPath = path.join(dir, 'snapshot.json');
+  const ratingsDir = path.join(dir, 'ratings');
   const previousLedger = process.env.PP_RECORD_LEDGER;
   const previousSnapshot = process.env.PP_SCAN_SNAPSHOT_FILE;
+  const previousRatingsDir = process.env.PP_RATINGS_DIR;
+  const previousSsbRatingsDir = process.env.SSB_RATINGS_DIR;
   process.env.PP_RECORD_LEDGER = ledgerPath;
   process.env.PP_SCAN_SNAPSHOT_FILE = snapshotPath;
+  // The external-ratings overlay is ON by default, so point its snapshot store
+  // at the temp dir: this suite must never read the user's real ratings store.
+  process.env.PP_RATINGS_DIR = ratingsDir;
+  delete process.env.SSB_RATINGS_DIR;
   t.after(() => {
     if (previousLedger === undefined) delete process.env.PP_RECORD_LEDGER;
     else process.env.PP_RECORD_LEDGER = previousLedger;
     if (previousSnapshot === undefined) delete process.env.PP_SCAN_SNAPSHOT_FILE;
     else process.env.PP_SCAN_SNAPSHOT_FILE = previousSnapshot;
+    if (previousRatingsDir === undefined) delete process.env.PP_RATINGS_DIR;
+    else process.env.PP_RATINGS_DIR = previousRatingsDir;
+    if (previousSsbRatingsDir === undefined) delete process.env.SSB_RATINGS_DIR;
+    else process.env.SSB_RATINGS_DIR = previousSsbRatingsDir;
     fs.rmSync(dir, { recursive: true, force: true });
   });
   return { dir, ledgerPath, snapshotPath };
@@ -187,7 +198,12 @@ describe('pp-cli --record-scan', () => {
   it('keeps stdout valid JSON when --json and --record-scan are combined', async (t) => {
     const env = withTempEnv(t);
     const results = makeResults();
-    const { logs } = await runScan({ handlerResults: results, flags: { 'record-scan': true, json: true } });
+    const { logs } = await runScan({
+      handlerResults: results,
+      // The overlay is ON by default; disable it here so this test still asserts
+      // the untouched payload reaches stdout (the overlay is covered separately).
+      flags: { 'record-scan': true, json: true, 'no-ratings-overlay': true }
+    });
     assert.equal(logs.length, 1, 'exactly one stdout write (the JSON payload)');
     assert.deepEqual(JSON.parse(logs[0]), results, 'stdout parses back to the scan results');
     assert.equal(fs.existsSync(env.ledgerPath), true, 'recording still happened');

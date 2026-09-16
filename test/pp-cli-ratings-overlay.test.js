@@ -8,12 +8,13 @@
 // could never fire. These tests pin the opt-in wiring and prove BOTH
 // directions:
 //
-//   - OFF (the default): a normal scan is byte-identical and pays nothing —
-//     proven behaviourally by leaving a VALID snapshot on disk and asserting
-//     no row gains `ratings` (i.e. the store was never read).
-//   - ON: only `ratings` is added; every ranking/tier/verdict/edge/score
-//     field is unchanged, and the ledger feature snapshot carries `ratings`
-//     only for the ON run.
+//   - OFF (--no-ratings-overlay, or SSB_RATINGS_OVERLAY=false): a scan is
+//     byte-identical and pays nothing — proven behaviourally by leaving a
+//     VALID snapshot on disk and asserting no row gains `ratings` (i.e. the
+//     store was never read).
+//   - ON (the default): only `ratings` is added; every ranking/tier/verdict/
+//     edge/score field is unchanged, and the ledger feature snapshot carries
+//     `ratings` only for the ON run.
 //
 // Everything is hermetic: a stub quick_screen handler, a temp PP_RATINGS_DIR
 // and a temp PP_RECORD_LEDGER, so nothing touches the user's home directory.
@@ -213,32 +214,40 @@ function stripRatings(results) {
 }
 
 describe('ratingsOverlayEnabled', () => {
-  it('is OFF by default: no flag and no env var', (t) => {
+  it('is ON by default: no flag and no env var', (t) => {
     const previous = process.env.SSB_RATINGS_OVERLAY;
     delete process.env.SSB_RATINGS_OVERLAY;
     t.after(() => {
       if (previous === undefined) delete process.env.SSB_RATINGS_OVERLAY;
       else process.env.SSB_RATINGS_OVERLAY = previous;
     });
-    assert.equal(cli.ratingsOverlayEnabled({}), false);
+    assert.equal(cli.ratingsOverlayEnabled({}), true);
   });
 
-  it('turns on via --ratings-overlay or SSB_RATINGS_OVERLAY=true, and --no-ratings-overlay wins', (t) => {
+  it('--no-ratings-overlay wins, SSB_RATINGS_OVERLAY=false disables, any other value stays on', (t) => {
     const previous = process.env.SSB_RATINGS_OVERLAY;
     t.after(() => {
       if (previous === undefined) delete process.env.SSB_RATINGS_OVERLAY;
       else process.env.SSB_RATINGS_OVERLAY = previous;
     });
 
+    assert.equal(cli.ratingsOverlayEnabled({ 'no-ratings-overlay': true }), false);
+    assert.equal(
+      cli.ratingsOverlayEnabled({ 'no-ratings-overlay': true, 'ratings-overlay': true }),
+      false,
+      'explicit disable beats explicit enable'
+    );
     assert.equal(cli.ratingsOverlayEnabled({ 'ratings-overlay': true }), true);
 
-    process.env.SSB_RATINGS_OVERLAY = 'true';
-    assert.equal(cli.ratingsOverlayEnabled({}), true);
-    assert.equal(cli.ratingsOverlayEnabled({ 'no-ratings-overlay': true }), false);
-
-    // Only the exact string 'true' counts — no truthy loose matching.
-    process.env.SSB_RATINGS_OVERLAY = '1';
+    process.env.SSB_RATINGS_OVERLAY = 'false';
     assert.equal(cli.ratingsOverlayEnabled({}), false);
+    assert.equal(cli.ratingsOverlayEnabled({ 'ratings-overlay': true }), true, 'flag overrides env');
+
+    // Only the exact string 'false' disables — no truthy loose matching.
+    for (const value of ['1', '0', 'no', 'TRUE', 'true', '']) {
+      process.env.SSB_RATINGS_OVERLAY = value;
+      assert.equal(cli.ratingsOverlayEnabled({}), true, `env ${JSON.stringify(value)} keeps the default ON`);
+    }
   });
 });
 
@@ -246,8 +255,8 @@ describe('pp scan --ratings-overlay wiring', () => {
   it('OFF is byte-identical across two runs and never reads the snapshot store', async (t) => {
     withTempEnv(t, { withSnapshot: true });
 
-    const first = await runScan(scanResults(), {});
-    const second = await runScan(scanResults(), {});
+    const first = await runScan(scanResults(), { 'no-ratings-overlay': true });
+    const second = await runScan(scanResults(), { 'no-ratings-overlay': true });
 
     // Two-run baseline: the overlay code path is present but disabled.
     assert.deepEqual(second.output, first.output, 'OFF runs are identical');
@@ -265,7 +274,7 @@ describe('pp scan --ratings-overlay wiring', () => {
   it('ON adds only `ratings`; every ranking/tier/verdict/edge/score field is unchanged', async (t) => {
     withTempEnv(t, { withSnapshot: true });
 
-    const off = await runScan(scanResults(), {});
+    const off = await runScan(scanResults(), { 'no-ratings-overlay': true });
     const on = await runScan(scanResults(), { 'ratings-overlay': true });
 
     assert.equal(on.output.length, off.output.length);
@@ -332,7 +341,7 @@ describe('ledger survival through the scan path', () => {
     const env = withTempEnv(t, { withSnapshot: true });
 
     // OFF run first — proves the whitelist line is dead without the overlay.
-    await runScan(scanResults(), { 'record-scan': true });
+    await runScan(scanResults(), { 'record-scan': true, 'no-ratings-overlay': true });
     const offLedger = JSON.parse(fs.readFileSync(env.ledgerPath, 'utf8'));
     assert.ok(offLedger.candidates.length > 0, 'OFF run recorded candidates');
     for (const candidate of offLedger.candidates) {
@@ -357,7 +366,7 @@ describe('applyScanRatingsOverlay direct contract', () => {
   it('is a no-op returning {applied:false} when disabled', async (t) => {
     withTempEnv(t, { withSnapshot: true });
     const res = { data: { results: clone(scanResults()) } };
-    const result = await cli.applyScanRatingsOverlay(res, {});
+    const result = await cli.applyScanRatingsOverlay(res, { 'no-ratings-overlay': true });
     assert.deepEqual(result, { applied: false, records: 0 });
     assert.equal('ratings' in res.data.results[0].plays[0], false);
   });
