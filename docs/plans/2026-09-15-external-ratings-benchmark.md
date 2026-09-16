@@ -83,10 +83,10 @@
 
 **Behavior:**
 
-- Directory: `process.env.PP_RATINGS_DIR || path.join(os.homedir(), '.ssb-for-agents', 'ratings')` (matches the existing `PP_RECORD_LEDGER` / `PP_SIGNAL_CALIBRATION_FILE` override convention).
+- Directory: `process.env.SSB_RATINGS_DIR || path.join(os.homedir(), '.ssb-for-agents', 'ratings')`, read through `resolveEnvVar('SSB_RATINGS_DIR', 'PP_RATINGS_DIR')` — the repo-wide state-dir override convention, with the pre-rename `PP_` spelling kept as a deprecated fallback (`SSB_` wins when both are set; same shape as the older `PP_RECORD_LEDGER` / `PP_SIGNAL_CALIBRATION_FILE` survivors).
 - File name: `<source>-<league>-<season>.json` holding `{ schemaVersion: 1, source, league, season, method, asOf, fetchedAt, sourceUrl, sourceHash, records: [...] }`.
 - `saveSnapshot`, `loadSnapshot(source, league, season)`, `listSnapshots()`.
-- **Never** write into the repo. Tests point `PP_RATINGS_DIR` at a `mkdtemp` path and restore it in `finally`.
+- **Never** write into the repo. Tests point `PP_RATINGS_DIR` at a `mkdtemp` path and restore it in `finally` (deliberately exercising the deprecated alias; the canonical `SSB_RATINGS_DIR` is cleared in the same setup so it cannot decide the path).
 
 **Step 1:** Failing test — save then load round-trips; a stale `asOf` older than a supplied cutoff is returned with `stale: true` rather than silently accepted; a snapshot whose `sourceHash` does not match its records is rejected.
 
@@ -246,7 +246,7 @@
 **Behavior:**
 
 - Join key is the **composite** `(league, canonical game identity, market)`, case-normalized on every segment — the removed Elo overlay's documented lesson was that a name-only join bleeds one game's context onto another.
-- Attach `row.ratings = { massey, sagarin, sasser }` (only sources present; each `null` when unavailable).
+- Attach `row.ratings = { <source>: entry }`, one key per entry in the contract's `SOURCES` (each `null` when unavailable).
 - **Only add.** Never clobber a pre-existing `row.ratings`.
 - Add one whitelist line to the feature snapshot so it survives into the ledger.
 - Invariant proof: two-run baseline (same fixture, with vs without the overlay) — assert `kaiCall`, `displayTier`, `confidenceTier`, `finalVerdict`, `consensusEdge`, `screenScore`, `riskScore` are **identical**; only `ratings` differs.

@@ -31,6 +31,8 @@ const ROWS = [
     game: 'Michigan vs Ohio State',
     selection: 'Michigan',
     odds: -140,
+    // A real play carries the event start; the recency gate needs it.
+    start: '2026-09-20T16:00:00Z',
     kaiCall: 'BET',
     displayTier: 'TIER 1',
     confidenceTier: 'TIER 1',
@@ -46,6 +48,7 @@ const ROWS = [
     game: 'Ohio State vs Penn State',
     selection: 'Penn State',
     odds: 120,
+    start: '2026-09-20T19:00:00Z',
     kaiCall: 'CONSIDER',
     displayTier: 'TIER 2',
     confidenceTier: 'TIER 2',

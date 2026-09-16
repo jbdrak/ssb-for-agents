@@ -66,7 +66,14 @@ function writeCsv(dir, content = CSV) {
 /** Apply env overrides and return a restore function (call in `finally`). */
 function withEnv(overrides) {
   const saved = {};
-  for (const [key, value] of Object.entries(overrides)) {
+  // The module reads the SSB_ spellings FIRST: keep them out of the way unless a
+  // case sets one explicitly, so an ambient export cannot decide the path.
+  const effective = {
+    SSB_RATINGS_DIR: undefined,
+    SSB_TENNIS_ELO_SNAPSHOT: undefined,
+    ...overrides
+  };
+  for (const [key, value] of Object.entries(effective)) {
     saved[key] = process.env[key];
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;

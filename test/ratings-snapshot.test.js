@@ -16,6 +16,10 @@ let tmpDir = null;
 function useTmpDir() {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-ratings-snapshot-'));
   process.env.PP_RATINGS_DIR = tmpDir;
+  // The module reads SSB_RATINGS_DIR FIRST, so an ambient export would decide
+  // the path instead of this fixture. Pin the canonical name out of the way;
+  // the deprecated alias is exercised on purpose here.
+  delete process.env.SSB_RATINGS_DIR;
   return tmpDir;
 }
 
@@ -92,6 +96,34 @@ describe('ssb-ratings-snapshot store', () => {
     assert.equal(saved.ok, true);
     assert.equal(fs.existsSync(saved.path), true);
     assert.equal(saved.path.startsWith(REPO_ROOT + path.sep), false);
+  });
+
+  it('leaves no temp file behind on a successful save', () => {
+    const saved = store.saveSnapshot(sampleSnapshot());
+    assert.equal(saved.ok, true, JSON.stringify(saved.errors));
+    // The write goes to a temp file and is renamed onto the target, so the
+    // directory holds the snapshot and nothing else.
+    assert.deepEqual(fs.readdirSync(tmpDir), ['sagarin-NCAAF-2026.json']);
+  });
+
+  // Atomicity: a reader must never observe a partial file at the final path.
+  // Driving a real disk fault is not portable, so the rename is made to fail
+  // instead - a DIRECTORY sits where the snapshot file belongs, which lets the
+  // temp write succeed and refuses the rename. That is the failure shape a
+  // truncating bare write would leave behind, so it is what the assertion pins.
+  it('a failed write leaves no partial file at the final path and no temp file', () => {
+    const target = path.join(tmpDir, 'sagarin-NCAAF-2026.json');
+    fs.mkdirSync(target);
+
+    const result = store.saveSnapshot(sampleSnapshot());
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('; '), /unable to write snapshot/);
+
+    // No stray temp file, and nothing readable was left at the final path.
+    assert.deepEqual(fs.readdirSync(tmpDir), ['sagarin-NCAAF-2026.json']);
+    assert.equal(fs.statSync(target).isDirectory(), true, 'the target was not replaced by a partial file');
+    const loaded = store.loadSnapshot('sagarin', 'NCAAF', 2026);
+    assert.equal(loaded.ok, false);
   });
 
   it('flags an asOf older than the supplied cutoff as stale instead of accepting it', () => {

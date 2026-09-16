@@ -244,6 +244,27 @@ describe('tennis-elo source adapter: resolved match', () => {
     assert.equal(record.market, 'Moneyline');
   });
 
+  it('carries the engine’s own Elo expectation, labelled derived rather than published', () => {
+    const record = lookup(build()).records[0];
+
+    // Djokovic 2125 / Alcaraz 2065 on hard: the engine's standard Elo
+    // expectation over the same ratings the record carries, so the number is
+    // reproducible from the record alone.
+    assert.equal(record.modelWinProbability, 1 / (1 + Math.pow(10, (2065 - 2125) / 400)));
+    assert.ok(record.modelWinProbability > 0.5 && record.modelWinProbability < 1);
+    // No vendor publishes it, so it must never be readable as a source's claim.
+    assert.equal(record.modelWinProbabilityKind, 'derived');
+
+    // It tracks the pair's own blend decision, not the bare overall ratings: on
+    // clay the pair does not blend (Alcaraz has 4 surface matches), so both the
+    // ratings and the probability move.
+    const clay = lookup(build(), { surface: 'clay' }).records[0];
+    assert.equal(clay.ratingA, 2100);
+    assert.equal(clay.ratingB, 2050);
+    assert.equal(clay.modelWinProbability, 1 / (1 + Math.pow(10, (2050 - 2100) / 400)));
+    assert.notEqual(clay.modelWinProbability, record.modelWinProbability);
+  });
+
   it('consumes a real loadSnapshot({ asOf }) result end to end', () => {
     const snapshotPath = path.join(fs.mkdtempSync(path.join(tmpRoot, 'file-')), 'snap.json');
     build({ write: true, outputPath: snapshotPath });
@@ -380,7 +401,14 @@ describe('tennis-elo source adapter: overlay join', () => {
     const [record] = lookup(build()).records;
     const rows = applyRatingsOverlay(
       [
-        { league: 'TENNIS', market: 'Moneyline', game: 'Carlos Alcaraz vs Novak Djokovic', selection: 'Novak Djokovic' }
+        {
+          league: 'TENNIS',
+          market: 'Moneyline',
+          game: 'Carlos Alcaraz vs Novak Djokovic',
+          selection: 'Novak Djokovic',
+          // A real play carries the event start; the recency gate needs it.
+          start: '2026-09-20T14:00:00Z'
+        }
       ],
       { ratings: [record] }
     );
@@ -395,7 +423,12 @@ describe('tennis-elo source adapter: overlay join', () => {
     const [record] = lookup(build()).records;
     const rows = applyRatingsOverlay(
       [
-        { league: 'TENNIS', market: 'Moneyline', game: 'Novak Djokovic vs Carlos Alcaraz' },
+        {
+          league: 'TENNIS',
+          market: 'Moneyline',
+          game: 'Novak Djokovic vs Carlos Alcaraz',
+          start: '2026-09-20T14:00:00Z'
+        },
         { league: 'TENNIS', market: 'Moneyline', game: 'Iga Swiatek vs Aryna Sabalenka' }
       ],
       { ratings: [record] }
@@ -419,6 +452,7 @@ describe('tennis-elo source adapter: overlay join', () => {
       league: 'TENNIS',
       market: 'Moneyline',
       game: 'Novak Djokovic vs Carlos Alcaraz',
+      start: '2026-09-20T14:00:00Z',
       kaiCall: 'BET',
       displayTier: 'TIER 1',
       finalVerdict: 'BET',
