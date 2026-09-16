@@ -59,4 +59,42 @@ describe('fantasy_optimizer routing', () => {
     assert.equal(result.count, 0);
     assert.deepEqual(result.result, []);
   });
+
+  it('unwraps the live { freeTier, threshold, omitted, bets } envelope', async () => {
+    const client = {
+      queryBackendFantasyPicks() {
+        return Promise.resolve({ freeTier: true, threshold: null, omitted: 3, bets: FANTASY_FIXTURE });
+      },
+      queryFantasyPicks() {
+        throw new Error('UNEXPECTED');
+      }
+    };
+    const handlers = createMcpHandlers({ client });
+    handlers.player_context = async () => ({ riskFlag: 'clean', tweets: [], news: [] });
+
+    const result = await handlers.fantasy_optimizer({ fantasyApps: ['Betr'], leagues: ['NFL', 'MLB'] });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.count, FANTASY_FIXTURE.length);
+    assert.equal(result.result.length, FANTASY_FIXTURE.length);
+    assert.equal(result.result[0].player, 'Luka Doncic');
+  });
+
+  it('reports an empty board when the envelope carries no bets array', async () => {
+    const client = {
+      queryBackendFantasyPicks() {
+        return Promise.resolve({ freeTier: true, threshold: null, omitted: 0 });
+      },
+      queryFantasyPicks() {
+        throw new Error('UNEXPECTED');
+      }
+    };
+    const handlers = createMcpHandlers({ client });
+    handlers.player_context = async () => ({ riskFlag: 'clean', tweets: [], news: [] });
+
+    const result = await handlers.fantasy_optimizer({ leagues: ['NFL'] });
+    assert.equal(result.ok, true);
+    assert.equal(result.count, 0);
+    assert.deepEqual(result.result, []);
+  });
 });

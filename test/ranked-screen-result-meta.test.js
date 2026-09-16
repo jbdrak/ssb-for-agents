@@ -51,6 +51,8 @@ describe('buildResultMeta', () => {
         targetBook: 'NoVigApp',
         sourceRowCount: null,
         rankedRowCount: 0,
+        unrankedRowCount: 0,
+        boundedSample: false,
         targetBookQuoteCount: 0,
         missingQuoteCount: 1
       },
@@ -82,5 +84,47 @@ describe('buildResultMeta', () => {
     assert.equal(result.focusBookMissingRowCount, 0);
     assert.equal(result.preHistoryShortlist, undefined);
     assert.equal(result.preHistoryRecovery, undefined);
+  });
+
+  it('discloses a capped sample when the feed returns more rows than were ranked', () => {
+    const result = buildResultMeta({
+      targetBook: 'Fliff',
+      sharpBooks: ['Pinnacle'],
+      lookbackHoursUsed: 6,
+      debug: false,
+      freshness: { freshnessFallbackUsed: false, timestampSources: [] },
+      warnings: [],
+      compact: true,
+      fields: null,
+      args: { market: 'Total Runs' },
+      ranked: [{ targetBookOdds: -120 }, { targetBookOdds: 105 }],
+      compactFields: COMPACT_FIELDS,
+      sourceRowCount: 168
+    });
+
+    assert.equal(result.targetBookCoverage.sourceRowCount, 168);
+    assert.equal(result.targetBookCoverage.rankedRowCount, 2);
+    assert.equal(result.targetBookCoverage.unrankedRowCount, 166);
+    assert.equal(result.targetBookCoverage.boundedSample, true);
+  });
+
+  it('does not flag a bounded sample when every source row was ranked', () => {
+    const result = buildResultMeta({
+      targetBook: 'Fliff',
+      sharpBooks: [],
+      lookbackHoursUsed: 6,
+      debug: false,
+      freshness: { freshnessFallbackUsed: false, timestampSources: [] },
+      warnings: [],
+      compact: true,
+      fields: null,
+      args: { market: 'Moneyline' },
+      ranked: [{ targetBookOdds: -110 }],
+      compactFields: COMPACT_FIELDS,
+      sourceRowCount: 1
+    });
+
+    assert.equal(result.targetBookCoverage.unrankedRowCount, 0);
+    assert.equal(result.targetBookCoverage.boundedSample, false);
   });
 });

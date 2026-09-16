@@ -59,6 +59,27 @@ describe('parseGameStartMs', () => {
     assert.equal(parseGameStartMs('not-a-date'), null);
   });
 
+  it('refuses a year-less display string instead of inventing year 2001', () => {
+    // The CLI's own `startCST` display field is exactly this shape. V8 parses
+    // `Wed, Sep 16, 1:30 PM CDT` to 1000665000000 (2001-09-16): a FINITE but
+    // wrong instant, which silently PASSES a recency comparison instead of
+    // refusing. Without an explicit year there is no correct answer, so the
+    // only safe result is null.
+    assert.equal(parseGameStartMs('Wed, Sep 16, 1:30 PM CT'), null);
+    assert.equal(parseGameStartMs('Wed, Sep 16, 1:30 PM CDT'), null);
+    assert.equal(parseGameStartMs('Wed, Sep 16, 1:30 PM CST'), null);
+    assert.equal(parseGameStartMs('Wed, Sep 16, 8:40 PM CT'), null);
+    assert.equal(parseGameStartMs('Thu, Jul 9, 7:00 AM'), null);
+    // Guard against the specific wrong-but-finite value, so a regression that
+    // re-enables the implied-year parse cannot slip through as "still a number".
+    assert.notEqual(parseGameStartMs('Wed, Sep 16, 1:30 PM CDT'), 1000665000000);
+  });
+
+  it('still parses a date string that carries an explicit year', () => {
+    assert.equal(parseGameStartMs('2026-09-16T13:30:00-05:00'), Date.parse('2026-09-16T13:30:00-05:00'));
+    assert.equal(parseGameStartMs('Sep 16, 2026 1:30 PM'), Date.parse('Sep 16, 2026 1:30 PM'));
+  });
+
   it('passes through small numbers unchanged (not timestamps)', () => {
     assert.equal(parseGameStartMs(42), 42);
     assert.equal(parseGameStartMs(0), 0);

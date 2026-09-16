@@ -23,7 +23,8 @@ const { formatScanDiagnostics, normalizeWatchCandidates, summarizeUnresolvedCand
   PROJECT + '/lib/scan-diagnostics'
 );
 const { getMarketsForSport } = require(PROJECT + '/lib/ssb-market-registry');
-const { getSoccerEventIdentity } = require(PROJECT + '/lib/soccer-event-identity');
+const { formatEventLabel } = require(PROJECT + '/lib/soccer-event-identity');
+const { verifyVenueOrder } = require(PROJECT + '/lib/ssb-venue-order');
 const { resolveScanLimit } = require(PROJECT + '/lib/ssb-scan-limit');
 const { correctTennisTimes } = require(PROJECT + '/lib/ssb-tennis');
 const { extractEventLinkRows, groupEventLinks } = require(PROJECT + '/lib/ssb-event-links');
@@ -192,6 +193,7 @@ Commands:
   log        Log a pick
   record     Review official bets + P&L from the tracker ledger (stats/review/pending)
   record-card  Record a reviewed decision card into the tracker ledger
+  record-scan  Record an already-captured scan JSON (pp scan -j > file) into the ledger
   player     Player context + injury/risk flags
   prices     Compare prices across books
   links      Get sportsbook event links from PP
@@ -214,7 +216,10 @@ Flags:
   -b, --book <name>         Execution book. Default: NoVigApp
   -t, --tier <1|2|1-2>      Tier filter. Default: 1-2 (TIER 1 + TIER 2)
   -B, --only-bets           Show only BET verdict plays
-  -M, --movement <type>     Movement filter (supportive, clean, bouncy, adverse)
+  -M, --movement <type>     Movement filter (supportive, clean, bouncy, adverse).
+                            adverse* only matches tennis-fallback rows: non-fallback
+                            adverse candidates are dropped before the filter runs,
+                            so use rank <league> --all-markets for the adverse board.
   -n, --limit <N>           Max results. Default: 50
   --card-window <today|next|all>  Date window. Default: today (local timezone)
   --sort <field>            Sort by: start, edge, tier, clv, momentum. Default: start
@@ -755,6 +760,48 @@ function recordScanResults(results, context = {}) {
     duplicates,
     candidates: candidates.length
   };
+}
+
+// ── record-scan (from a captured file) ─────────────────────────
+
+/**
+ * Record a scan that was already run and captured to disk
+ * (`pp scan ... -j > scan.json`).
+ *
+ * The inline --record-scan flag only fires while the scan is in flight, so a
+ * background scan, an earlier scan, or a saved --json payload could never
+ * reach the ledger — leaving candidates unrecorded and the ledger's "By tier"
+ * / "By movement" breakdowns empty. This reads the same results[] blocks the
+ * scan prints and writes identical scan + candidate records (idempotent by
+ * content hash, exactly like the inline path).
+ */
+async function cmdRecordScan(positional, flags = {}) {
+  const file = positional[1];
+  const jsonOut = flags.j === true || flags.json === true;
+  if (!file) throw new Error('record-scan: no scan file — pass the JSON captured from `pp scan ... -j`');
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    throw new Error('record-scan: cannot read scan JSON (' + (e && e.message ? e.message : String(e)) + ')', {
+      cause: e
+    });
+  }
+  const results = Array.isArray(parsed) ? parsed : Array.isArray(parsed && parsed.results) ? parsed.results : null;
+  if (!results || results.length === 0) {
+    throw new Error('record-scan: no results[] blocks in ' + file);
+  }
+  const context = {
+    book: flags.book || (parsed && parsed.book) || null,
+    leagues: flags.leagues || (parsed && parsed.leagues) || null,
+    markets: flags.markets || (parsed && parsed.markets) || null,
+    tiers: flags.tiers || (parsed && parsed.tiers) || null,
+    limit: flags.limit || null
+  };
+  const result = recordScanResults(results, context);
+  if (!result.ok) throw new Error('record-scan: ' + (result.error || 'unknown error'));
+  if (jsonOut) console.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 // ── record-card ────────────────────────────────────────────────
@@ -1480,6 +1527,21 @@ async function cmdGame(handlers, positional, flags) {
     clearInterval(heartbeat);
   }
   const rows = res.result || res.data || [];
+  // Venue order must be corroborated before we render an `away @ home` label.
+  // The feed's homeTeam/awayTeam are null for some games and inverted for
+  // others, so verify against ESPN and normalize anything unverified to an
+  // explicit `false` — never a home-first claim. verifyVenueOrder never throws
+  // and its board fetch is process-cached, so this costs one round trip at most.
+  for (const row of rows) {
+    if (!row || row.venueOrderVerified === true) continue;
+    const verified = await verifyVenueOrder(row);
+    row.venueOrderVerified = verified.venueOrderVerified;
+    if (verified.venueOrderVerified) {
+      row.homeTeam = verified.homeTeam;
+      row.awayTeam = verified.awayTeam;
+      row.venueOrderSource = verified.source;
+    }
+  }
   if (/^tennis$/i.test(String(league)) && rows.length) {
     await correctTennisTimes(rows);
   }
@@ -1496,11 +1558,10 @@ async function cmdGame(handlers, positional, flags) {
       return;
     }
     const r = rows[0];
-    const eventLabel =
-      /^(soccer|mls)$/i.test(String(r.league || '')) && r.venueOrderVerified !== true
-        ? getSoccerEventIdentity(r).label
-        : (r.awayTeam || 'Away') + ' @ ' + (r.homeTeam || 'Home');
-    console.log(B + eventLabel + R);
+    // Venue-order rule lives in formatEventLabel (lib/soccer-event-identity.js):
+    // an `away @ home` label requires a verified venue marker, otherwise it
+    // fails closed to a neutral matchup. See that helper for the failure it fixes.
+    console.log(B + formatEventLabel(r) + R);
     console.log('start: ' + r.start + '  |  market: ' + r.market + '  |  defaultKey: ' + r.defaultKey);
     console.log(
       'movementLabel: ' +
@@ -2584,6 +2645,9 @@ async function main() {
     case 'log':
       await cmdLog(handlers, positional, flags);
       break;
+    case 'record-scan':
+      await cmdRecordScan(positional, flags);
+      break;
     case 'record-card':
       await cmdRecordCard(positional, flags);
       break;
@@ -2645,6 +2709,7 @@ module.exports = {
   cmdPrices,
   renderScanOutput,
   recordScanResults,
+  cmdRecordScan,
   cmdRecordCard,
   cmdRecord,
   cmdLinks,

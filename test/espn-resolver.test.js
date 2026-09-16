@@ -55,7 +55,13 @@ describe('getPlayResult — pure branches', () => {
   });
 
   it('returns null for unsupported league', async () => {
-    assert.equal(await getPlayResult({ league: 'NFL', selection: 'X' }), null);
+    assert.equal(await getPlayResult({ league: 'CRICKET', selection: 'X' }), null);
+  });
+
+  it('maps every supported league to an ESPN path', () => {
+    for (const league of ['NBA', 'WNBA', 'NCAAB', 'MLB', 'NFL', 'NCAAF', 'NHL', 'TENNIS', 'UFC']) {
+      assert.ok(ESPN_LEAGUE_PATH[league], `${league} should map to an ESPN path`);
+    }
   });
 
   it('returns null when no competitions resolve', async () => {
@@ -209,7 +215,7 @@ describe('fetchEspnScoreboard — caching + paths', () => {
   afterEach(() => clearCache());
 
   it('returns [] for an unknown league (no path)', async () => {
-    const out = await fetchEspnScoreboard('NFL');
+    const out = await fetchEspnScoreboard('CRICKET');
     assert.deepEqual(out, []);
   });
 
