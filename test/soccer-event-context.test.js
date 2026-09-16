@@ -119,6 +119,62 @@ describe('soccer event context', () => {
     });
   });
 
+  it('normalizes feed club spellings to the ESPN name', () => {
+    assert.equal(normalizeSoccerTeamName('Athletic Bilbao'), 'athletic club');
+    assert.equal(normalizeSoccerTeamName('Deportivo La Coruña'), 'deportivo');
+    // A different club that merely shares a leading token must stay distinct.
+    assert.notEqual(normalizeSoccerTeamName('Levante Las Planas'), normalizeSoccerTeamName('Levante'));
+  });
+
+  it('resolves a feed/ESPN spelling difference on the real La Liga pair', async () => {
+    const fetchImpl = async () =>
+      scoreboardResponse([
+        event({
+          date: '2026-09-16T19:30:00Z',
+          home: 'Levante',
+          away: 'Athletic Club',
+          homeShort: 'Levante',
+          awayShort: 'Athletic Club'
+        })
+      ]);
+    const context = await resolveSoccerEventContext(
+      row({
+        leagueName: 'La Liga',
+        start: '2026-09-16T19:30:00.000Z',
+        homeTeam: 'Athletic Bilbao',
+        awayTeam: 'Levante'
+      }),
+      { fetchImpl }
+    );
+    assert.equal(context.resolved, true);
+    assert.equal(context.homeTeam, 'Levante');
+    assert.equal(context.awayTeam, 'Athletic Club');
+  });
+
+  it('does not resolve a spelling difference onto a different club', async () => {
+    const fetchImpl = async () =>
+      scoreboardResponse([
+        event({
+          date: '2026-09-16T19:30:00Z',
+          home: 'Levante',
+          away: 'Sevilla',
+          homeShort: 'Levante',
+          awayShort: 'Sevilla'
+        })
+      ]);
+    const context = await resolveSoccerEventContext(
+      row({
+        leagueName: 'La Liga',
+        start: '2026-09-16T19:30:00.000Z',
+        homeTeam: 'Levante Las Planas',
+        awayTeam: 'Sevilla'
+      }),
+      { fetchImpl }
+    );
+    assert.equal(context.resolved, false);
+    assert.equal(context.reason, 'schedule_match_not_found');
+  });
+
   it('rejects a different event date', async () => {
     const context = await resolveSoccerEventContext(row(), {
       fetchImpl: async () => scoreboardResponse([event({ date: '2026-09-08T18:45:00Z' })])
