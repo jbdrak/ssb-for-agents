@@ -15,8 +15,8 @@ const sasser = require('../lib/ratings-sources/sasser');
 // real Week-3 games (a handful of rows, NOT a dataset) so the adapter meets the
 // exact payload shape: `week.season`, a `week.updatedAt` line, and per game a
 // `projection` (home/away scores), a `market` (opening/current/projected lines)
-// and a `picks.spread`. One game names Tulane, a real program the shared alias
-// registry does not seed, so it must come out `unresolved` rather than guessed.
+// and a `picks.spread`. One test substitutes an unknown program name in memory
+// (never in this file) so the fail-closed path runs over the real payload shape.
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'ratings', 'sasser-cfb-2026-w3.html');
 const FIXTURE_HTML = fs.readFileSync(FIXTURE_PATH, 'utf8');
 
@@ -120,13 +120,27 @@ describe('sasser source adapter: normalize', () => {
 
     assert.equal(byEvent(result, '401858225').matchStatus, 'unmatched');
 
-    const unknown = byEvent(result, '401856792');
-    // Kansas State resolves; Tulane does not, so the game is unresolved, not a guess.
-    assert.equal(unknown.teamA, 'Kansas State');
-    assert.equal(unknown.teamB, 'Tulane');
-    assert.equal(unknown.matchStatus, 'unresolved');
-    assert.match(unknown.unresolvedReason, /Tulane/);
-    assert.match(unknown.unresolvedReason, /NCAAF/);
+    const tulane = byEvent(result, '401856792');
+    // Tulane is a registered FBS program, so both sides of the game resolve.
+    assert.equal(tulane.teamA, 'Kansas State');
+    assert.equal(tulane.teamB, 'Tulane');
+    assert.equal(tulane.matchStatus, 'unmatched');
+
+    // A program the registry does not seed stays unresolved rather than guessed.
+    // The captured fixture bytes are left intact; the unknown name is swapped in
+    // memory so the real parser still runs over the real payload shape.
+    const unknown = sasser.normalizeSasser({
+      raw: FIXTURE_HTML.replace(/Tulane/g, 'Nowhere Tech'),
+      league: 'NCAAF',
+      fetchedAt: FETCHED_AT
+    });
+    const unresolvedGame = unknown.records.find((row) => row.eventId === '401856792');
+    assert.ok(unresolvedGame, 'the substituted game must still parse');
+    assert.equal(unresolvedGame.teamA, 'Kansas State');
+    assert.equal(unresolvedGame.teamB, 'Nowhere Tech');
+    assert.equal(unresolvedGame.matchStatus, 'unresolved');
+    assert.match(unresolvedGame.unresolvedReason, /Nowhere Tech/);
+    assert.match(unresolvedGame.unresolvedReason, /NCAAF/);
   });
 
   it('produces records the contract validator accepts', () => {

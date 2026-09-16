@@ -3,10 +3,10 @@
 Updated: 2026-09-15
 
 This note records the third-party coverage, license/terms position, and parse
-caveats for the external-ratings **benchmark** layer: Massey, Sagarin, and
-Sasser. It is a source reference, not a performance claim. The verified
-out-of-sample-style read for one NCAAF week stays in
-`docs/research/sagarin-ncaaf-benchmark-2026-09-06.md`.
+caveats for the external-ratings **benchmark** layer: Massey, Sagarin, Sasser,
+and the locally-built tennis Elo snapshot. It is a source reference, not a
+performance claim. The verified out-of-sample-style read for one NCAAF week
+stays in `docs/research/sagarin-ncaaf-benchmark-2026-09-06.md`.
 
 ## Scope: shadow / benchmark only
 
@@ -18,16 +18,21 @@ evidence beats the de-vigged closing line. Fair & Oster found computer rankings
 add no information on top of the Vegas spread, so the expected value here is
 context and veto, not edge.
 
-**Wiring status (as of 2026-09-15): the shadow overlay is built and tested but
-has no production call site.** `applyRatingsOverlay` / `canonicalGameKey` are
-required only by `test/ratings-overlay.test.js`; nothing in `lib/`, `scripts/`,
-or `bin/` invokes them, so a live scan does not emit a `ratings` field today. The
-rank-neutrality evidence is module-level (the two-run invariant test in
-`test/ratings-overlay.test.js`), not a proven live-path result. A `ratings` key
-is whitelisted into the feature snapshot in `lib/record-candidates.js`, so an
-overlay run would survive into the ledger; connecting the overlay to a
-production path remains explicit follow-up work. The snapshot store _is_ wired,
-via `scripts/refresh-ratings.js` and the read-only `pp ratings` command.
+**Wiring status: the shadow overlay IS wired, behind an explicit opt-in.**
+`bin/pp-cli.js` calls `applyScanRatingsOverlay(res, flags)` after the tennis and
+wallet overlays and before render, so the same rows feed both stdout and the
+`--record-scan` ledger snapshot. It is enabled with `--ratings-overlay` or
+`SSB_RATINGS_OVERLAY=true` and is **off by default**; when disabled the helper
+returns before reading the snapshot store, so a normal scan pays no I/O cost and
+emits no `ratings` field. A `ratings` key is whitelisted into the feature
+snapshot in `lib/record-candidates.js`, so rated rows survive into the ledger.
+
+Rank-neutrality is proven at two levels: the module-level two-run invariant in
+`test/ratings-overlay.test.js`, and the CLI-level two-run test in
+`test/pp-cli-ratings-overlay.test.js` (OFF is byte-identical across runs; ON
+differs only by `ratings`, and stripping `ratings` from the ON run is
+byte-identical to OFF). The snapshot store is wired via
+`scripts/refresh-ratings.js` and the read-only `pp ratings` command.
 
 ## Module map
 
@@ -36,6 +41,9 @@ via `scripts/refresh-ratings.js` and the read-only `pp ratings` command.
 - `lib/ratings-sources/massey.js`, `.../sagarin.js`, `.../sasser.js` — one pure
   adapter per source, each with an injected `fetchImpl` so no test path can reach
   the network.
+- `lib/ratings-sources/tennis-elo.js` — the tennis Elo source adapter. It has no
+  fetch: it normalizes a locally-built snapshot (see `lib/tennis-elo-data.js`)
+  into the same contract, so there is nothing to reach the network with.
 - `lib/ssb-ratings-snapshot.js` — versioned, hash-carrying snapshots in the local
   state dir.
 - `lib/ssb-ratings-overlay.js` — additive `applyRatingsOverlay`, composite join
@@ -47,18 +55,30 @@ via `scripts/refresh-ratings.js` and the read-only `pp ratings` command.
 
 ## Per-source coverage
 
-| Source  | Canonical leagues covered                          | Data shape                             | MLB?                                                                                    |
-| ------- | -------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------- |
-| Massey  | `NCAAF`, `NFL`, `NBA`, `NHL`, `MLB`, `MLS`, `WNBA` | Per-team ratings table (`Rat` primary) | Yes — the only source with MLB **team** ratings                                         |
-| Sagarin | `NCAAF`, `NFL`, `NBA`, `NCAAB`, `NHL`, `MLS`       | Per-game predictions with totals       | **No** — the baseball page is _player_ ratings, so there is no team rating to normalize |
-| Sasser  | `NCAAF` only                                       | Per-game projection overlay            | No                                                                                      |
+| Source     | Canonical leagues covered                                   | Data shape                               | MLB?                                                                                    |
+| ---------- | ----------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| Massey     | `NCAAF`, `NFL`, `NBA`, `NCAAB`, `NHL`, `MLB`, `MLS`, `WNBA` | Per-team ratings table (`Rat` primary)   | Yes — the only source with MLB **team** ratings                                         |
+| Sagarin    | `NCAAF`, `NFL`, `NBA`, `NCAAB`, `NHL`, `MLS`                | Per-game predictions with totals         | **No** — the baseball page is _player_ ratings, so there is no team rating to normalize |
+| Sasser     | `NCAAF` only                                                | Per-game projection overlay              | No                                                                                      |
+| tennis_elo | `TENNIS` only                                               | Per-player surface-aware Elo (moneyline) | No                                                                                      |
 
 CLI/frontend vocabulary `CFB`/`CBB` maps to the contract's canonical `NCAAF`/
-`NCAAB`. Massey does publish a college-basketball page, but no NCAAB adapter or
-alias is seeded, so NCAAB is a stated adapter scope gap rather than a half-wired
-source. A league a source does not publish returns `coverage: 'unavailable'`
-with a reason and is never fetched; an unsupported canonical league (names source
-and sport) is kept distinct from an unrecognized code (a caller typo).
+`NCAAB`. Massey publishes a college-basketball page (`/cb/ncaa-d1/ratings`), the
+massey adapter covers `NCAAB`, and the team-alias registry seeds all 362 ESPN D1
+programs, so Massey NCAAB rows join to a game instead of staying `unresolved`.
+ESPN publishes no team for Queens, Lindenwood, Southern Indiana or St. Francis
+(PA), so those four rows stay `unresolved` rather than getting a guessed key.
+
+A Massey `NCAAB` snapshot cannot be written until the college-basketball season
+begins: Massey's page reports `Using games thru Preseason` instead of a date, so
+`asOf` and `season` are null and the snapshot store refuses the write. That is
+fail-closed behaviour working correctly, not a broken adapter - the page still
+parses (365 rows); only the date is missing. Expect `massey NCAAB` to error with
+`missing or invalid season/asOf` until the season starts (roughly November).
+
+A league a source does not publish returns `coverage: 'unavailable'` with a reason
+and is never fetched; an unsupported canonical league (names source and sport) is
+kept distinct from an unrecognized code (a caller typo).
 
 ## License / terms notes
 
@@ -71,7 +91,7 @@ and sport) is kept distinct from an unrecognized code (a caller typo).
   (`schemaVersion: 1`), matching the existing `PP_RECORD_LEDGER` /
   `PP_SIGNAL_CALIBRATION_FILE` override convention.
 - Sagarin's pages are free legacy HTML; Sasser's is a free public model page. The
-  same "derived-only, state-dir-only" rule applies to all three.
+  same "derived-only, state-dir-only" rule applies to all of them.
 - `scripts/refresh-ratings.js` imports no PropProfessor client and calls no SSB
   endpoint. Refreshing third-party pages is the allowed schedulable category
   (same as `resolve-outcomes.js --espn` and `refresh-tennis-circuit.js`); it
@@ -112,9 +132,24 @@ MONEY` tail is printed on CFB/NFL but omitted on NBA/NHL, so it is optional.
 
 ### Massey (`masseyratings.com`)
 
-- Expect **CSV from the ratings page's More -> Export action**, not JSON; there
-  is no documented free API. `fetchMassey` accepts an explicit `exportUrl` and
-  invents no undocumented endpoint.
+- **Transport (verified live 2026-09-15).** The ratings host sits behind a bot
+  wall that answers plain HTTP - `node fetch`, with or without a real Chrome
+  User-Agent - with HTTP 403 (`Just a moment...`), so the refresh uses the
+  repo's existing `got-scraping` client. Passing the wall is not enough: the
+  ratings page is a JavaScript shell, so `lib/ratings-sources/massey-web.js`
+  reads the page's inline `stamp.obfu` / `stamp.jsonURL`, decodes the latter
+  with the page's own cipher to the `/json/rate.php?...` export URL, and
+  de-obfuscates the payload's numeric cells with the seed the page itself
+  derives (`parseInt(obfu.slice(32), 10)`). This is a **reverse-engineered
+  vendor contract** pinned to the current `inc/stamp.js` build, not an API: each
+  step fails closed with a reason naming the step, and it must be re-verified
+  when Massey ships a new bundle. `--export-url` stays a first-class operator
+  seam that needs no browser - a URL returning the export CSV is passed through
+  untouched and one returning the export JSON is decoded.
+- Expect the ratings export as CSV from the page's More -> Export action, or as
+  the JSON endpoint the page itself calls; there is no documented free API. The
+  transport re-emits the payload in the adapter's documented CSV shape, folding
+  each rank/value pair into one cell (`1 9.10`).
 - Verified header (2026-09-15): `Team | Rec | Δ | Rat | Pwr | Off | Def | HFA |
 SoS | SSF | EW | EL`; the title line reads `... Using games thru <date>`; a
   `Correlation` footer row is printed as a row and is skipped.
@@ -150,9 +185,47 @@ SoS | SSF | EW | EL`; the title line reads `... Using games thru <date>`; a
   `market.projected` is away-minus-home and equals `-predictedMargin`. The score
   projection is the source of truth.
 
+### Tennis Elo (`lib/ratings-sources/tennis-elo.js`)
+
+- Not a third-party fetch at all: the ratings are built locally from a
+  user-supplied match CSV (`lib/tennis-elo-data.js`) and read back from a
+  snapshot outside the repo. See `lib/tennis-elo-data/README.md` for the build
+  step and the Sackmann/CC BY-NC-SA licence constraint.
+- **Moneyline only.** Elo rates a head-to-head winner; it cannot price a total or
+  a handicap. A non-moneyline market returns `unavailable` with a reason and
+  reads nothing from the snapshot, and the emitted record is scoped to
+  `market: 'Moneyline'` so the overlay never attaches it to a totals row.
+- **Participants, not teams.** Tennis has no team registry, so the overlay
+  identifies each side by the diacritic-folded, case-normalized player name.
+  `teamA`/`teamB` are player names, and a lookup whose two sides resolve to the
+  same player is refused (`same_player`) rather than emitted as an individual
+  "event".
+- **`teamA`/`teamB` are one fixture** — a resolved record carries both players,
+  and the surface-aware rating is the engine's own blend rule (overall +
+  `surfaceWeight × (surface − overall)`, applied to both sides only when both
+  clear `minSurfaceMatches` on that surface).
+- **Point-in-time is mandatory.** The caller supplies the prediction date
+  (`asOf`); a snapshot whose manifest `asOf` is not strictly before it is
+  refused. An optional `snapshotNotBefore` floor refuses a snapshot older than a
+  date the caller will accept.
+- Reason strings are distinct by cause: `unsupported_market`, `missing_asof`,
+  `snapshot_unavailable` / `snapshot_invalid` / `snapshot_after_cutoff` /
+  `snapshot_stale`, `missing_provenance`, `unknown_tour`, `unknown_player`,
+  `ambiguous_player`, `same_player`, `unknown_surface`, `player_missing_rating`,
+  `invalid_record`. Never collapse "player not in snapshot" with "snapshot not
+  valid for this date" or "surface unknown".
+- The snapshot must carry `sourceUrl` (built with `--source-url`); a manifest
+  without it is `missing_provenance`, because the contract requires provenance
+  and a fabricated URL would be worse than a refusal. The builder enforces the
+  same rule at BUILD time: `scripts/refresh-tennis-elo.js` refuses a
+  ratings-intended build without `--source-url` and names the missing field, so
+  the gap cannot first appear as an `unavailable` row at scan time.
+  `--engine-only` is the documented way to build a snapshot for the pure Elo
+  engine that the ratings layer refuses by design.
+
 ## Evaluation requirements
 
-Score each source **independently** — never blend the three. Compare against the
+Score each source **independently** — never blend them. Compare against the
 **de-vigged closing line** (CLV, ROI, drawdown) alongside Brier score, log loss,
 and reliability. The split is chronological, never shuffled, and segmented by
 league, level (FBS/FCS), favorite band, and market. Show sample and coverage

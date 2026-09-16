@@ -189,7 +189,10 @@ Prefer these adapters over changing the live ranking path or the v2 ledger.
   error; an `unresolved` record must carry a reason.
 - `lib/ratings-sources/massey.js`, `.../sagarin.js`, `.../sasser.js` — one pure
   adapter per source, each with an **injected** `fetchImpl` (no test path can
-  reach the network) and a pure `normalizeX`. See the coverage table below.
+  reach the network) and a pure `normalizeX`. Massey additionally has
+  `lib/ratings-sources/massey-web.js`, the transport that gets past its host's
+  bot wall (got-scraping) and de-obfuscates the page's export payload; the other
+  two sources need no such layer. See the coverage table below.
 - `lib/ssb-ratings-snapshot.js` — versioned, hash-carrying snapshots in the local
   state dir, never the repo (see below).
 - `lib/ssb-ratings-overlay.js` — additive `applyRatingsOverlay`: attaches
@@ -221,11 +224,17 @@ delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
 
 **Per-source coverage (canonical repo league codes)**
 
-| Source  | Leagues                                      | Notes                                                                                            |
-| ------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Massey  | CFB→`NCAAF`, NFL, NBA, NHL, MLB, MLS, WNBA   | The only source with MLB **team** ratings. NCAAB is a deliberate adapter scope gap.              |
-| Sagarin | CFB→`NCAAF`, NFL, NBA, CBB→`NCAAB`, NHL, MLS | **No MLB team ratings** — Sagarin's baseball page is player ratings.                             |
-| Sasser  | CFB→`NCAAF` only                             | A per-game projection overlay, not a rating (`ratingA/B` null, `coverage: 'partial'` by design). |
+| Source  | Leagues                                           | Notes                                                                                            |
+| ------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Massey  | CFB→`NCAAF`, NFL, NBA, NCAAB, NHL, MLB, MLS, WNBA | The only source with MLB **team** ratings. NCAAB reads the NCAA D1 ratings table.                |
+| Sagarin | CFB→`NCAAF`, NFL, NBA, CBB→`NCAAB`, NHL, MLS      | **No MLB team ratings** — Sagarin's baseball page is player ratings.                             |
+| Sasser  | CFB→`NCAAF` only                                  | A per-game projection overlay, not a rating (`ratingA/B` null, `coverage: 'partial'` by design). |
+
+Massey's NCAAB coverage reads the NCAA D1 ratings page, and the team-alias
+registry seeds all 362 ESPN-published D1 programs, so its rows join to a game
+instead of staying `unresolved`. ESPN publishes no team for Queens, Lindenwood,
+Southern Indiana or St. Francis (PA), so those four stay `unresolved` rather than
+getting a guessed key.
 
 A league a source does not publish returns `coverage: 'unavailable'` with a
 stated reason, and the refresh never fetches it — an empty ratings table and a

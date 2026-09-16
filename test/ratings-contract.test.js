@@ -159,12 +159,13 @@ describe('ssb-ratings-contract', () => {
     }
   });
 
-  it('exposes the three canonical sources', () => {
-    assert.deepEqual(SOURCES, ['massey', 'sagarin', 'sasser']);
+  it('exposes the canonical sources', () => {
+    assert.deepEqual(SOURCES, ['massey', 'sagarin', 'sasser', 'tennis_elo']);
   });
 
   it('maps supported leagues per source, excluding MLB for sagarin and non-NCAAF for sasser', () => {
     assert.deepEqual(supportedLeagues('sasser'), ['NCAAF']);
+    assert.deepEqual(supportedLeagues('tennis_elo'), ['TENNIS']);
     assert.ok(supportedLeagues('massey').includes('MLB'));
     assert.ok(supportedLeagues('massey').includes('WNBA'));
     assert.ok(supportedLeagues('sagarin').includes('NCAAF'));

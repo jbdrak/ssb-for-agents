@@ -10,7 +10,13 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { evaluateRatingSources, DEFAULT_EVALUATION_DIMENSIONS } = require('../lib/ssb-external-ratings-evaluation');
+const {
+  evaluateRatingSources,
+  evaluateMarketRelative,
+  favoriteBandOf,
+  DEFAULT_EVALUATION_DIMENSIONS,
+  DEFAULT_MARKET_MIN_SAMPLE
+} = require('../lib/ssb-external-ratings-evaluation');
 
 function resolvedRow(overrides = {}) {
   return {
@@ -387,6 +393,133 @@ describe('external-ratings market-relative comparison gate', () => {
     assert.match(market.baseline, /not edge/);
 
     // A source is never presented as profitable or as a positive-EV signal.
+    for (const forbidden of ['profitable', 'positiveExpectedValue', 'expectedValue', 'ev', 'edge']) {
+      assert.equal(market[forbidden], undefined, `${forbidden} must not be reported`);
+    }
+  });
+});
+
+// Tennis Elo (port, part 4): the SAME market-relative gate applied to tennis.
+// Surface is a real context variable for tennis, not a nicety, and ATP/WTA are
+// never pooled - so the gate is fed `surface` + `tour` (+ the market-derived
+// band). Moneyline is the only tennis market Elo models, so `market` is kept as
+// a dimension: a totals row forms its own segment and can never merge into the
+// ML evaluation. Below DEFAULT_MARKET_MIN_SAMPLE (30) a segment reports
+// `insufficient_sample` and no number at all.
+describe('external-ratings market-relative gate: tennis Elo (surface x tour)', () => {
+  const DIMENSIONS = ['surface', 'tour', 'marketFavoriteBand'];
+
+  // An evaluation row for a tennis Elo play: the Elo selected-player probability
+  // is the model probability, compared against the de-vigged close.
+  function tennisRow(overrides = {}) {
+    return {
+      outcome: 'win',
+      matched: true,
+      modelWinProbability: 0.55,
+      marketFairProbability: 0.6,
+      closingOdds: -110,
+      surface: 'hard',
+      tour: 'ATP',
+      market: 'Moneyline',
+      league: 'TENNIS',
+      predictionTimestamp: '2026-06-01T12:00:00Z',
+      ...overrides
+    };
+  }
+
+  function repeat(count, overrides = {}) {
+    return Array.from({ length: count }, (_value, index) =>
+      tennisRow({ ...overrides, predictionTimestamp: `2026-06-${String(index + 1).padStart(2, '0')}T12:00:00Z` })
+    );
+  }
+
+  it('segments by surface and tour and never pools the two tours', () => {
+    const rows = [...repeat(30, { surface: 'hard', tour: 'ATP' }), ...repeat(30, { surface: 'clay', tour: 'WTA' })];
+    const market = evaluateMarketRelative(rows, { dimensions: DIMENSIONS });
+
+    assert.equal(market.status, 'ok');
+    assert.equal(market.sampleSize, 60);
+    assert.deepEqual(market.dimensions, DIMENSIONS);
+
+    // marketFair 0.60 -> market favourite size 0.60 -> 'moderate'.
+    assert.deepEqual(Object.keys(market.segments).sort(), ['CLAY|WTA|MODERATE', 'HARD|ATP|MODERATE']);
+    assert.equal(market.segments['HARD|ATP|MODERATE'].sampleSize, 30);
+    assert.equal(market.segments['CLAY|WTA|MODERATE'].sampleSize, 30);
+
+    // ATP and WTA are never blended into one segment.
+    assert.ok(!Object.keys(market.segments).some((key) => key.includes('ATP') && key.includes('WTA')));
+  });
+
+  it('reports insufficient_sample per segment below 30 while a full segment still reports', () => {
+    const rows = [...repeat(30, { surface: 'hard', tour: 'ATP' }), ...repeat(3, { surface: 'grass', tour: 'ATP' })];
+    const market = evaluateMarketRelative(rows, { dimensions: DIMENSIONS });
+
+    assert.equal(market.status, 'ok');
+    assert.equal(market.sampleSize, 33);
+
+    const hard = market.segments['HARD|ATP|MODERATE'];
+    assert.equal(hard.status, 'ok');
+    assert.equal(hard.sampleSize, 30);
+    assert.equal(typeof hard.clvPct, 'number');
+
+    const grass = market.segments['GRASS|ATP|MODERATE'];
+    assert.equal(grass.status, 'insufficient_sample');
+    assert.equal(grass.sampleSize, 3);
+    // No metric may leak through below the segment's sample threshold.
+    for (const field of ['clvPct', 'roi', 'maxDrawdown', 'scores']) {
+      assert.equal(grass[field], undefined, `${field} must not leak below the segment sample threshold`);
+    }
+  });
+
+  it('returns insufficient_sample for the whole sport below 30 rows, with no number at all', () => {
+    const market = evaluateMarketRelative(repeat(29, { surface: 'hard', tour: 'ATP' }), { dimensions: DIMENSIONS });
+
+    assert.equal(market.status, 'insufficient_sample');
+    assert.equal(market.reason, 'below_min_sample');
+    assert.equal(market.sampleSize, 29);
+    assert.equal(market.minSample, DEFAULT_MARKET_MIN_SAMPLE);
+    assert.equal(DEFAULT_MARKET_MIN_SAMPLE, 30);
+    for (const field of ['clvPct', 'roi', 'maxDrawdown', 'scores', 'split', 'segments']) {
+      assert.equal(market[field], undefined, `${field} must not be reported below the sport sample threshold`);
+    }
+  });
+
+  it('bands the market favourite from the market price, never the model confidence', () => {
+    // Model 80% on a game the market priced near even money: the MODEL band
+    // would be HEAVY, the MARKET band is SLIGHT. The gate must use the market.
+    const market = evaluateMarketRelative(repeat(30, { modelWinProbability: 0.8, marketFairProbability: 0.55 }), {
+      dimensions: DIMENSIONS
+    });
+
+    assert.equal(favoriteBandOf(0.8), 'heavy'); // the band the gate must NOT use
+    assert.deepEqual(Object.keys(market.segments), ['HARD|ATP|SLIGHT']);
+    assert.deepEqual(market.marketFavoriteBandSource, { marketFairProbability: 30 });
+    assert.equal(market.bandSemantics.marketFavoriteBand, 'market_favourite_size');
+    assert.equal(market.bandSemantics.favoriteBand, 'model_confidence');
+  });
+
+  it('keeps a non-Moneyline row in its own segment, out of the ML evaluation', () => {
+    const rows = [
+      ...repeat(30, { surface: 'hard', tour: 'ATP', market: 'Moneyline' }),
+      tennisRow({ surface: 'hard', tour: 'ATP', market: 'Total Games' })
+    ];
+    const market = evaluateMarketRelative(rows, {
+      dimensions: ['surface', 'tour', 'market', 'marketFavoriteBand']
+    });
+
+    assert.equal(market.segments['HARD|ATP|MONEYLINE|MODERATE'].sampleSize, 30);
+    // The totals row is a distinct, under-sampled segment and never merges in.
+    assert.equal(market.segments['HARD|ATP|TOTAL GAMES|MODERATE'].sampleSize, 1);
+    assert.equal(market.segments['HARD|ATP|TOTAL GAMES|MODERATE'].status, 'insufficient_sample');
+  });
+
+  it('repeats the honest baseline and never presents tennis Elo as edge', () => {
+    const market = evaluateMarketRelative(repeat(30), { dimensions: DIMENSIONS });
+
+    assert.equal(market.interpretation, 'context_confirmation_veto');
+    assert.match(market.baseline, /Fair & Oster/);
+    assert.match(market.baseline, /not edge/);
+    assert.equal(market.marketInput, 'marketFairProbability');
     for (const forbidden of ['profitable', 'positiveExpectedValue', 'expectedValue', 'ev', 'edge']) {
       assert.equal(market[forbidden], undefined, `${forbidden} must not be reported`);
     }

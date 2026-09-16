@@ -35,6 +35,7 @@
 
 const store = require('../lib/ssb-ratings-snapshot');
 const massey = require('../lib/ratings-sources/massey');
+const masseyWeb = require('../lib/ratings-sources/massey-web');
 const sagarin = require('../lib/ratings-sources/sagarin');
 const sasser = require('../lib/ratings-sources/sasser');
 
@@ -44,7 +45,10 @@ const ADAPTERS = Object.freeze({
     fetch: massey.fetchMassey,
     normalize: massey.normalizeMassey,
     unsupportedReason: massey.unsupportedReason,
-    supportedLeagues: massey.supportedLeagues
+    supportedLeagues: massey.supportedLeagues,
+    // Massey's ratings host 403s plain HTTP, so it needs the got-scraping
+    // client rather than the ambient fetch. Other sources keep the default.
+    createFetch: masseyWeb.createMasseyFetch
   },
   sagarin: {
     source: sagarin.SOURCE,
@@ -98,14 +102,26 @@ function rowFor(source, league, status, extra = {}) {
 }
 
 /**
+ * The transport for one adapter: an explicitly injected fetch wins (tests and
+ * callers), then the adapter's own client when it needs one (massey's host 403s
+ * plain HTTP, so it uses got-scraping), then the ambient fetch.
+ */
+async function resolveFetch(adapter, context) {
+  if (typeof context.injectedFetch === 'function') return context.injectedFetch;
+  if (typeof adapter.createFetch === 'function') return adapter.createFetch();
+  return context.fetchImpl;
+}
+
+/**
  * Fetch, normalize and (unless `save` is false) snapshot ONE source/league
  * pair. Never throws: every failure — an unsupported league, a throwing
  * transport, unreadable content, a refused snapshot write — comes back as a
  * result row, so one bad pair can never abort the batch.
  */
 async function refreshPair(adapter, requestedLeague, context) {
-  const { fetchImpl, now, method, exportUrl, save } = context;
+  const { now, method, exportUrl, save } = context;
   try {
+    const fetchImpl = await resolveFetch(adapter, context);
     const unsupported = adapter.unsupportedReason(requestedLeague);
     if (unsupported) {
       // A league the source does not publish is never fetched: an empty
@@ -193,6 +209,7 @@ async function refreshRatings(options = {}) {
   }
   const context = {
     fetchImpl,
+    injectedFetch: options.fetchImpl,
     now: options.now,
     method: options.method,
     exportUrl: options.exportUrl,

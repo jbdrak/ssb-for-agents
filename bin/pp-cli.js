@@ -27,7 +27,8 @@ const { getSoccerEventIdentity } = require(PROJECT + '/lib/soccer-event-identity
 const { resolveScanLimit } = require(PROJECT + '/lib/ssb-scan-limit');
 const { correctTennisTimes } = require(PROJECT + '/lib/ssb-tennis');
 const { extractEventLinkRows, groupEventLinks } = require(PROJECT + '/lib/ssb-event-links');
-const { listSnapshots } = require(PROJECT + '/lib/ssb-ratings-snapshot');
+const { listSnapshots, loadSnapshot } = require(PROJECT + '/lib/ssb-ratings-snapshot');
+const { applyRatingsOverlay } = require(PROJECT + '/lib/ssb-ratings-overlay');
 const reviewRecord = require(PROJECT + '/scripts/review-record');
 
 // ── book alias resolution ──────────────────────────────────────
@@ -228,6 +229,8 @@ Flags:
   --props                   Include player prop markets (Player Points, etc.) in the scan
   --wallets [N]             Overlay top Polymarket wallets' live positions on plays (default off; N = number of wallets, default 20)
   --no-wallets              Explicitly disable the wallet overlay (only meaningful with --wallets)
+  --ratings-overlay         Attach external-ratings benchmark records (Massey/Sagarin/Sasser) to plays as 'ratings' (default off; SSB_RATINGS_OVERLAY=true)
+  --no-ratings-overlay      Explicitly disable the ratings overlay
 
 Examples:
   pp scan tennis wnba
@@ -1173,6 +1176,65 @@ async function applyScanWalletOverlay(res, flags) {
   }
 }
 
+// ── external-ratings shadow overlay (opt-in) ─────────────────────
+// Massey / Sagarin / Sasser benchmark records are a SHADOW label: they attach
+// to final candidate rows as `row.ratings` for later evaluation and never feed
+// the ranker, tiers, verdicts, or edge. OPT-IN via --ratings-overlay (or
+// SSB_RATINGS_OVERLAY=true) because it reads the snapshot store; a normal scan
+// must not pay for it. Disable explicitly with --no-ratings-overlay.
+
+/** True when the caller asked for the external-ratings shadow overlay. */
+function ratingsOverlayEnabled(flags = {}) {
+  if (flags['no-ratings-overlay'] || flags.noRatingsOverlay) return false;
+  if (flags['ratings-overlay'] || flags.ratingsOverlay) return true;
+  return process.env.SSB_RATINGS_OVERLAY === 'true';
+}
+
+/**
+ * Read every record in the external-ratings snapshot store
+ * (lib/ssb-ratings-snapshot.js). Fails closed per file: an unreadable,
+ * invalid, or stale snapshot contributes nothing rather than throwing. The
+ * live overlay supplies no point-in-time cutoff, so the store's `stale` flag
+ * is inert here by design; the guard stays wired for callers that do.
+ *
+ * @returns {Array<Record<string, any>>}
+ */
+function loadRatingsRecords() {
+  const listed = listSnapshots();
+  if (!listed.ok) return [];
+  const records = [];
+  for (const summary of listed.snapshots) {
+    if (!summary.valid) continue;
+    const loaded = loadSnapshot(summary.source, summary.league, summary.season);
+    if (!loaded.ok || loaded.stale || !loaded.snapshot) continue;
+    for (const record of loaded.snapshot.records) records.push(record);
+  }
+  return records;
+}
+
+/**
+ * Attach external-ratings benchmark records to the final scan rows in place.
+ * Pure enrichment: it only ADDS `row.ratings` and can never change a ranking,
+ * tier, verdict, edge, or score. Default OFF — when disabled it returns before
+ * touching the snapshot store, so a normal scan pays nothing. A read failure
+ * degrades to a silent no-op; enrichment must never break scan output.
+ *
+ * @param {Object} res - scan response ({ data: { results } } or { results })
+ * @param {Object} [flags]
+ * @returns {{applied: boolean, records: number}}
+ */
+async function applyScanRatingsOverlay(res, flags = {}) {
+  if (!ratingsOverlayEnabled(flags)) return { applied: false, records: 0 };
+  try {
+    const results = res?.data?.results || res?.results || [];
+    const records = loadRatingsRecords();
+    applyRatingsOverlay(results, { ratings: records });
+    return { applied: true, records: records.length };
+  } catch {
+    return { applied: false, records: 0 };
+  }
+}
+
 async function cmdScan(handlers, positional, flags, client) {
   const FAST_LEAGUES = ['MLB', 'Tennis', 'UFC', 'NBA', 'WNBA'];
   let leagues =
@@ -1319,6 +1381,13 @@ async function cmdScan(handlers, positional, flags, client) {
     // Polymarket on every run, so we don't fire them on a plain scan.
     await applyScanWalletOverlay(res, flags);
     phaseMark = logPhase('scan.wallet_overlay', phaseMark);
+
+    // External-ratings shadow overlay (opt-in). Pure enrichment: attaches
+    // `row.ratings` for later evaluation, never touches a rank/tier/verdict
+    // field. Runs before render so the same rows reach both stdout and the
+    // --record-scan ledger snapshot. Zero cost when disabled (the default).
+    await applyScanRatingsOverlay(res, flags);
+    phaseMark = logPhase('scan.ratings_overlay', phaseMark);
 
     renderScanOutput(res, { flags, leagues, marketList, book, targetTiers, cardWindow, limit });
     logPhase('scan.render', phaseMark);
@@ -2574,6 +2643,8 @@ module.exports = {
   cmdRecord,
   cmdLinks,
   cmdRatings,
+  ratingsOverlayEnabled,
+  applyScanRatingsOverlay,
   resolveWalletDate,
   parseCardInput,
   formatScan,
