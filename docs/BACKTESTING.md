@@ -246,18 +246,34 @@ Prefer these adapters over changing the live ranking path or the v2 ledger.
   settled outcomes claim is refused as `ambiguous_fixture` rather than collapsed
   onto one game.
 
-**Wiring status: wired into `pp scan`, opt-in and default OFF.** `cmdScan` in
+**Wiring status: wired into `pp scan`, ON by default.** `cmdScan` in
 `bin/pp-cli.js` calls `applyScanRatingsOverlay`, which invokes `applyRatingsOverlay`
-only when `--ratings-overlay` (or `SSB_RATINGS_OVERLAY=true`) is set;
-`--no-ratings-overlay` forces it off, so a normal scan emits no `ratings` field.
+unless `--no-ratings-overlay` (or `SSB_RATINGS_OVERLAY=false`) disables it, so a
+scan carries `row.ratings` unless it is asked not to; the explicit
+`--ratings-overlay` flag is still accepted and now simply states the default. A
+league a source does not cover still carries the key with a `null` entry per
+source, so the presence of `ratings` is not itself evidence that a source
+matched.
 The overlay is pure enrichment: it only ADDS `row.ratings` and leaves `kaiCall`,
 `displayTier`, `confidenceTier`, `finalVerdict`, `consensusEdge`, `screenScore`,
 and `riskScore` untouched, so no external rating reaches live BET eligibility.
 Rank-neutrality is proven **at module level** by the two-run invariant test in
-`test/ratings-overlay.test.js`; the opt-in CLI path calls that same module, so no
+`test/ratings-overlay.test.js`; the CLI path calls that same module, so no
 separate live A/B neutrality run is claimed. A `ratings` key is whitelisted into
 the feature snapshot in `lib/record-candidates.js`, so an overlay run survives
 into the ledger.
+
+**Running the evidence gate.** `pp ratings --evaluate` is the runnable form of
+the two gates below. It reads the snapshot store and the tracker ledger and
+prints, per source, the records seen, the rows joined, whether the source can
+produce a probability at all (and why not when it cannot), and its sample before
+any score; then the market-relative gate, whose only input today is an explicit
+`--markets <file>` (no producer writes de-vigged closes yet). The outcomes it
+scores against come from settled **moneyline** bets in the ledger: a win
+probability is a moneyline concept, and only a moneyline result names the game's
+winner, so run-line / handicap / total settlements are never converted into one.
+The gate reports `sample=0` until settled moneyline outcomes exist for a league a
+probability-carrying source covers (Sagarin: NCAAF/NFL; tennis Elo: TENNIS).
 
 The Sagarin-only helper `lib/sagarin-external-evaluation.js` is retained and now
 delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,

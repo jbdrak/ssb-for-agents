@@ -30,6 +30,8 @@ const { correctTennisTimes } = require(PROJECT + '/lib/ssb-tennis');
 const { extractEventLinkRows, groupEventLinks } = require(PROJECT + '/lib/ssb-event-links');
 const { listSnapshots, loadSnapshot } = require(PROJECT + '/lib/ssb-ratings-snapshot');
 const { applyRatingsOverlay } = require(PROJECT + '/lib/ssb-ratings-overlay');
+const { buildRatingEvaluationRows } = require(PROJECT + '/lib/ssb-ratings-evaluation-bridge');
+const { evaluateRatingSources, evaluateMarketRelative } = require(PROJECT + '/lib/ssb-external-ratings-evaluation');
 const reviewRecord = require(PROJECT + '/scripts/review-record');
 
 // ── book alias resolution ──────────────────────────────────────
@@ -234,8 +236,8 @@ Flags:
   --props                   Include player prop markets (Player Points, etc.) in the scan
   --wallets [N]             Overlay top Polymarket wallets' live positions on plays (default off; N = number of wallets, default 20)
   --no-wallets              Explicitly disable the wallet overlay (only meaningful with --wallets)
-  --ratings-overlay         Attach external-ratings benchmark records to plays as 'ratings' (default off; SSB_RATINGS_OVERLAY=true)
-  --no-ratings-overlay      Explicitly disable the ratings overlay
+  --ratings-overlay         Attach external-ratings benchmark records to plays as 'ratings' (default on)
+  --no-ratings-overlay      Explicitly disable the ratings overlay (or set SSB_RATINGS_OVERLAY=false)
 
 Examples:
   pp scan tennis wnba
@@ -437,20 +439,31 @@ Check auth + backend health. Always JSON output.
 
 List the external-ratings benchmark snapshots that
 node scripts/refresh-ratings.js wrote to the local state dir
-(SSB_RATINGS_DIR, default ~/.ssb-for-agents/ratings/).
+(SSB_RATINGS_DIR, default ~/.ssb-for-agents/ratings/), or run the
+layer's evidence gate over them.
 
 Read-only: this command never fetches and never contacts PropProfessor.
 
 Flags:
-  --source <a,b>            Filter by source (massey, sagarin, sasser)
+  --source <a,b>            Filter by source (massey, sagarin, sasser, tennis_elo)
   --league <a,b>            Filter by league (CFB/CBB aliases map to NCAAF/NCAAB)
   --season <a,b>            Filter by season
   --show                    Print per-snapshot detail (method, asOf, fetchedAt, records, path)
+  --evaluate                Score each source independently against settled moneyline
+                            outcomes from the tracker ledger (Brier / log loss /
+                            calibration), then run the market-relative gate. Sample and
+                            coverage are reported before any score; a source that cannot
+                            produce a probability is named with its reason.
+  --markets <file>          De-vigged closing lines for the market gate (JSON array, or
+                            {markets: [...]}). No producer writes these yet.
+  --min-sample <n>          Minimum sample before the market gate reports a number (default 30)
   -j, --json                Raw JSON output
 
 Examples:
   pp ratings --source sagarin --league CFB --show
   pp ratings --source massey,sasser --json
+  pp ratings --evaluate
+  pp ratings --evaluate --source sagarin --json
 `
 };
 
@@ -1223,18 +1236,20 @@ async function applyScanWalletOverlay(res, flags) {
   }
 }
 
-// ── external-ratings shadow overlay (opt-in) ─────────────────────
+// ── external-ratings shadow overlay (default ON) ─────────────────
 // External-ratings benchmark records are a SHADOW label: they attach
 // to final candidate rows as `row.ratings` for later evaluation and never feed
-// the ranker, tiers, verdicts, or edge. OPT-IN via --ratings-overlay (or
-// SSB_RATINGS_OVERLAY=true) because it reads the snapshot store; a normal scan
-// must not pay for it. Disable explicitly with --no-ratings-overlay.
+// the ranker, tiers, verdicts, or edge. ON by default so every scan carries the
+// context; the store read is cheap and any failure degrades to a silent no-op.
+// Disable with --no-ratings-overlay (or SSB_RATINGS_OVERLAY=false).
 
 /** True when the caller asked for the external-ratings shadow overlay. */
 function ratingsOverlayEnabled(flags = {}) {
   if (flags['no-ratings-overlay'] || flags.noRatingsOverlay) return false;
   if (flags['ratings-overlay'] || flags.ratingsOverlay) return true;
-  return process.env.SSB_RATINGS_OVERLAY === 'true';
+  // Default ON. Only the exact string 'false' turns it off via the env, so a
+  // set-but-typo'd value cannot silently change what a scan emits.
+  return process.env.SSB_RATINGS_OVERLAY !== 'false';
 }
 
 /**
@@ -1268,8 +1283,9 @@ function loadRatingsRecords() {
 /**
  * Attach external-ratings benchmark records to the final scan rows in place.
  * Pure enrichment: it only ADDS `row.ratings` and can never change a ranking,
- * tier, verdict, edge, or score. Default OFF — when disabled it returns before
- * touching the snapshot store, so a normal scan pays nothing. A read failure
+ * tier, verdict, edge, or score. Default ON — when disabled with
+ * --no-ratings-overlay it returns before touching the snapshot store, so a
+ * disabled scan pays nothing. A read failure
  * degrades to a silent no-op; enrichment must never break scan output.
  *
  * @param {Object} res - scan response ({ data: { results } } or { results })
@@ -2499,6 +2515,185 @@ function ratingsList(value) {
 }
 
 /**
+ * Settled outcomes from the tracker ledger, reshaped into exactly what
+ * `buildRatingEvaluationRows` consumes: `{ league, game, winner }`, where
+ * `winner` names one of the two sides.
+ *
+ * Only MONEYLINE bets qualify, for two independent reasons. A win probability is
+ * a moneyline concept, so it can only be scored against a moneyline result; and
+ * only a moneyline W-L names the game's winner. A Run Line / handicap / total
+ * bet's outcome says nothing about which side won the game (a -1.5 side can lose
+ * its bet and still win the game), so deriving a winner from one would be a
+ * guess. Anything unattributable is counted and skipped, never guessed.
+ *
+ * @returns {{ok: boolean, error?: string, outcomes: Array<Object>, skipped: Array<Object>}}
+ */
+function ratingsOutcomesFromLedger() {
+  const loaded = loadLedger();
+  if (!loaded.ok) return { ok: false, error: loaded.error, outcomes: [], skipped: [] };
+  const bets = (loaded.ledger && loaded.ledger.bets) || [];
+  const outcomes = [];
+  const skipped = [];
+  for (const bet of bets) {
+    if (!bet || bet.market !== 'Moneyline') continue;
+    if (bet.status !== 'win' && bet.status !== 'loss') {
+      skipped.push({ game: bet.game, reason: 'unsettled' });
+      continue;
+    }
+    const sides = String(bet.game || '').split(/\s+vs\s+/i);
+    if (sides.length !== 2) {
+      skipped.push({ game: bet.game, reason: 'unparsable_game' });
+      continue;
+    }
+    const [sideA, sideB] = sides.map((side) => side.trim());
+    if (bet.selection !== sideA && bet.selection !== sideB) {
+      skipped.push({ game: bet.game, reason: 'selection_not_a_side' });
+      continue;
+    }
+    const winner = bet.status === 'win' ? bet.selection : bet.selection === sideA ? sideB : sideA;
+    outcomes.push({ league: bet.league, game: bet.game, winner });
+  }
+  return { ok: true, outcomes, skipped };
+}
+
+/**
+ * Optional explicit de-vigged closing lines (`--markets <file>`). No producer
+ * writes these yet, so the flag exists to keep the gate runnable against a
+ * supplied file rather than to imply a source that does not exist.
+ *
+ * @param {unknown} file
+ * @returns {{ok: boolean, error?: string, markets: Array<Object>}}
+ */
+function ratingsMarketsFromFile(file) {
+  if (typeof file !== 'string' || file.trim() === '') return { ok: true, markets: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const markets = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.markets) ? parsed.markets : null;
+    if (!markets) return { ok: false, error: `markets file ${file} must be a JSON array or { markets: [...] }` };
+    return { ok: true, markets };
+  } catch (error) {
+    return { ok: false, error: `unable to read markets file ${file}: ${error && error.message}` };
+  }
+}
+
+/**
+ * Run the layer's evidence gate end to end: snapshot-store records + settled
+ * moneyline outcomes (+ any supplied market closes) through the bridge, then
+ * `evaluateRatingSources` and `evaluateMarketRelative`.
+ *
+ * Read-only and network-free: it reads the snapshot store and the tracker
+ * ledger and never fetches, so it is safe to run anywhere.
+ *
+ * @param {{sources: string[], leagues: string[], seasons: number[], marketsFile?: unknown, minSample?: number}} opts
+ * @returns {Promise<Object>}
+ */
+async function buildRatingsEvaluationReport(opts) {
+  const listed = listSnapshots();
+  if (!listed.ok) throw new Error('ratings: ' + (listed.errors || []).join('; '));
+
+  let snapshots = listed.snapshots;
+  if (opts.sources.length) snapshots = snapshots.filter((s) => opts.sources.includes(s.source));
+  if (opts.leagues.length) snapshots = snapshots.filter((s) => opts.leagues.includes(s.league));
+  if (opts.seasons.length) snapshots = snapshots.filter((s) => opts.seasons.includes(s.season));
+
+  const records = [];
+  for (const snapshot of snapshots) {
+    if (!snapshot.valid) continue;
+    const loaded = loadSnapshot(snapshot.source, snapshot.league, snapshot.season);
+    if (!loaded.ok || !loaded.snapshot) continue;
+    for (const record of loaded.snapshot.records) records.push(record);
+  }
+
+  const outcomeResult = ratingsOutcomesFromLedger();
+  if (!outcomeResult.ok) throw new Error('ratings: ' + outcomeResult.error);
+  const marketResult = ratingsMarketsFromFile(opts.marketsFile);
+  if (!marketResult.ok) throw new Error('ratings: ' + marketResult.error);
+
+  const built = buildRatingEvaluationRows({
+    records,
+    outcomes: outcomeResult.outcomes,
+    markets: marketResult.markets
+  });
+  const evaluation = evaluateRatingSources(built.rows);
+  const marketRelative = evaluateMarketRelative(
+    built.rows,
+    Number.isInteger(opts.minSample) ? { minSample: opts.minSample } : {}
+  );
+
+  return {
+    snapshotCount: snapshots.length,
+    records: records.length,
+    outcomes: outcomeResult.outcomes.length,
+    outcomeSkipped: outcomeResult.skipped,
+    markets: marketResult.markets.length,
+    counts: built.counts,
+    sources: built.sources,
+    skipped: built.skipped,
+    scores: evaluation.sources,
+    marketRelative
+  };
+}
+
+/**
+ * Human-readable rendering of a `buildRatingsEvaluationReport` result. Shows
+ * sample and coverage BEFORE any score, names every source that could not be
+ * scored and why, and repeats the layer's honest baseline.
+ */
+function formatRatingsEvaluation(report) {
+  console.log(`${B}External-ratings evaluation${R}`);
+  console.log(
+    `  snapshots: ${report.snapshotCount}  records: ${report.records}` +
+      `  moneyline outcomes: ${report.outcomes}  market closes: ${report.markets}`
+  );
+  console.log(
+    `  joined rows: ${report.counts.rows}  (unmatched ${report.counts.unmatched},` +
+      ` records skipped ${report.counts.recordsSkipped}, input skipped ${report.counts.inputSkipped})`
+  );
+
+  console.log(`\n${B}Per source${R}`);
+  for (const [source, info] of Object.entries(report.sources)) {
+    const probability = info.probability || {};
+    const answer = probability.available ? `${probability.kind}` : 'declined';
+    const scored = report.scores[source];
+    const sample = scored ? scored.coverage.sampleSize : 0;
+    console.log(
+      `  ${source.padEnd(11)} records=${String(info.records).padStart(4)} joined=${String(info.rows).padStart(4)}` +
+        ` probability=${answer.padEnd(9)} sample=${sample}`
+    );
+    if (!probability.available && probability.reason) console.log(`              because: ${probability.reason}`);
+    if (scored && scored.scores && Object.keys(scored.scores).length) {
+      for (const [metric, value] of Object.entries(scored.scores)) {
+        console.log(`              ${metric}: ${typeof value === 'number' ? value.toFixed(4) : JSON.stringify(value)}`);
+      }
+    }
+  }
+
+  console.log(`\n${B}Market-relative gate${R}`);
+  console.log(
+    `  ${report.marketRelative.status}` +
+      (report.marketRelative.sampleSize === undefined ? '' : ` (sample ${report.marketRelative.sampleSize})`) +
+      (report.marketRelative.reason ? ` - ${report.marketRelative.reason}` : '')
+  );
+  if (report.marketRelative.baseline) console.log(`  baseline: ${report.marketRelative.baseline}`);
+
+  if (report.skipped.length) {
+    console.log(`\n${B}Why records did not join${R}`);
+    for (const entry of [...report.skipped].sort((a, b) => b.count - a.count)) {
+      console.log(`  ${String(entry.count).padStart(4)}  ${entry.source || '(input)'}  ${entry.reason}`);
+    }
+  }
+
+  if (report.outcomeSkipped.length) {
+    console.log(`\n${B}Ledger outcomes not usable${R}`);
+    const counted = new Map();
+    for (const entry of report.outcomeSkipped) {
+      counted.set(entry.reason, (counted.get(entry.reason) || 0) + 1);
+    }
+    for (const [reason, count] of counted) console.log(`  ${String(count).padStart(4)}  ${reason}`);
+  }
+}
+
+/**
  * Read the external-ratings benchmark snapshots that
  * `node scripts/refresh-ratings.js` wrote to the local state dir
  * (`SSB_RATINGS_DIR`, default `~/.ssb-for-agents/ratings/`).
@@ -2515,6 +2710,21 @@ async function cmdRatings(positional, flags = {}) {
   const seasons = ratingsList(flags.season)
     .map((value) => Number(value))
     .filter((value) => Number.isInteger(value));
+
+  if (flags.evaluate === true) {
+    const requestedSample = Number(flags['min-sample']);
+    const minSample = Number.isInteger(requestedSample) && requestedSample > 0 ? requestedSample : undefined;
+    const report = await buildRatingsEvaluationReport({
+      sources,
+      leagues,
+      seasons,
+      marketsFile: flags.markets,
+      minSample
+    });
+    if (jsonOut) console.log(JSON.stringify(report, null, 2));
+    else formatRatingsEvaluation(report);
+    return { ok: true, ...report };
+  }
 
   const listed = listSnapshots();
   if (!listed.ok) throw new Error('ratings: ' + (listed.errors || []).join('; '));

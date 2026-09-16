@@ -11,8 +11,10 @@
  * required, guarded so main() does not auto-run).
  */
 
-const { describe, it, before } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('path');
 
 const PROJECT = path.resolve(__dirname, '..');
@@ -23,6 +25,9 @@ describe('cmdScan tennis fallback in mixed-league scans', () => {
   let momentumLabel;
   let openerContextLabel;
   let mockedFallbackPlays;
+  let ratingsDir;
+  let previousRatingsDir;
+  let previousSsbRatingsDir;
 
   // ── mock recoverTennisFromScreen ─────────────────────────────────
   // We replace the tennis-fallback module in require.cache BEFORE
@@ -92,6 +97,24 @@ describe('cmdScan tennis fallback in mixed-league scans', () => {
     conflictResolved: true,
     conflictNote: 'Opposite side "Djokovic N" (supportive_clean, CLV=3) kept as BET'
   };
+
+  // The external-ratings overlay is ON by default, so pin its snapshot store at
+  // a throwaway dir: this suite must never read the user's real ratings store.
+  before(() => {
+    ratingsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-scan-fallback-ratings-'));
+    previousRatingsDir = process.env.PP_RATINGS_DIR;
+    previousSsbRatingsDir = process.env.SSB_RATINGS_DIR;
+    process.env.PP_RATINGS_DIR = ratingsDir;
+    delete process.env.SSB_RATINGS_DIR;
+  });
+
+  after(() => {
+    if (previousRatingsDir === undefined) delete process.env.PP_RATINGS_DIR;
+    else process.env.PP_RATINGS_DIR = previousRatingsDir;
+    if (previousSsbRatingsDir === undefined) delete process.env.SSB_RATINGS_DIR;
+    else process.env.SSB_RATINGS_DIR = previousSsbRatingsDir;
+    fs.rmSync(ratingsDir, { recursive: true, force: true });
+  });
 
   before(() => {
     mockedFallbackPlays = [SAMPLE_TENNIS_PLAY, CONSIDER_TENNIS_PLAY];

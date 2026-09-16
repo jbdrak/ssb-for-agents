@@ -552,3 +552,166 @@ describe('pp ratings: read-only (never fetches)', () => {
     assert.deepEqual(calls, []);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Evidence gate (`pp ratings --evaluate`)
+// ---------------------------------------------------------------------------
+
+/** Point PP_RECORD_LEDGER at a throwaway ledger, optionally seeding it. */
+function useLedger(t, ledger) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-ratings-ledger-'));
+  const ledgerPath = path.join(dir, 'ledger.json');
+  const previous = process.env.PP_RECORD_LEDGER;
+  if (ledger) fs.writeFileSync(ledgerPath, JSON.stringify(ledger));
+  process.env.PP_RECORD_LEDGER = ledgerPath;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PP_RECORD_LEDGER;
+    else process.env.PP_RECORD_LEDGER = previous;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  return ledgerPath;
+}
+
+/** One Sagarin NCAAF fixture that carries its page's own published WIN%. */
+function seedSagarinWithProbability() {
+  const sourceHash = 'sha256:sagarin:NCAAF:2026';
+  const saved = store.saveSnapshot({
+    source: 'sagarin',
+    league: 'NCAAF',
+    season: 2026,
+    method: 'overall',
+    sourceUrl: 'https://example.invalid/sagarin/NCAAF',
+    asOf: AS_OF,
+    fetchedAt: FETCHED_AT,
+    sourceHash,
+    records: [
+      {
+        source: 'sagarin',
+        league: 'NCAAF',
+        sourceHash,
+        // The bridge carries the prediction time from the RECORD's own asOf.
+        asOf: AS_OF,
+        coverage: 'full',
+        matchStatus: 'unmatched',
+        teamA: 'Syracuse',
+        teamB: 'Pittsburgh',
+        modelWinProbability: 0.75,
+        modelWinProbabilityKind: 'published'
+      }
+    ]
+  });
+  assert.equal(saved.ok, true, 'the probability fixture must save');
+  return saved;
+}
+
+function settledMoneylineBet(overrides = {}) {
+  return {
+    id: 'bet-1',
+    gameId: 'g-1',
+    game: 'Pittsburgh vs Syracuse',
+    league: 'NCAAF',
+    market: 'Moneyline',
+    selection: 'Pittsburgh',
+    oddsAtDecision: -120,
+    stake: 1,
+    status: 'loss',
+    ...overrides
+  };
+}
+
+function ledgerWith(bets) {
+  return { version: 2, scans: [], candidates: [], bets, settlements: [] };
+}
+
+describe('pp ratings --evaluate', () => {
+  it('scores a probability-carrying source against a settled moneyline outcome', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    // Selected side lost, so the winner is the other side of the matchup.
+    useLedger(t, ledgerWith([settledMoneylineBet()]));
+
+    const { result } = await runRatings(['ratings', '--evaluate', '--json']);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.records, 1);
+    assert.equal(result.outcomes, 1, 'the settled moneyline bet became one outcome');
+    assert.equal(result.counts.rows, 1, 'the record joined the settled outcome');
+    assert.equal(result.sources.sagarin.probability.available, true);
+    assert.equal(result.scores.sagarin.coverage.sampleSize, 1, 'one scored sample');
+    assert.ok(Object.keys(result.scores.sagarin.scores).length > 0, 'a scored source reports its metrics');
+  });
+
+  it('never derives an outcome from a non-moneyline settlement', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    // A run-line W-L says nothing about which side won the game.
+    useLedger(
+      t,
+      ledgerWith([
+        settledMoneylineBet({ id: 'bet-1', market: 'Run Line', selection: 'Pittsburgh -1.5', status: 'win' }),
+        settledMoneylineBet({ id: 'bet-2', market: 'Total Games', selection: 'Under 21.5', status: 'win' })
+      ])
+    );
+
+    const { result } = await runRatings(['ratings', '--evaluate', '--json']);
+
+    assert.equal(result.outcomes, 0, 'no non-moneyline bet becomes an outcome');
+    // The record still builds a row, but with no settled result it stays
+    // unmatched and is never graded.
+    assert.equal(result.counts.unmatched, 1);
+    assert.equal(result.scores.sagarin.coverage.sampleSize, 0);
+    assert.equal(result.scores.sagarin.coverage.unmatched, 1);
+  });
+
+  it('names a declined source and its reason instead of scoring an invented mapping', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    store.saveSnapshot(
+      snapshotInput('massey', 'MLB', 2026, 1) // Massey publishes no win probability
+    );
+    useLedger(t, ledgerWith([settledMoneylineBet()]));
+
+    const { result } = await runRatings(['ratings', '--evaluate', '--json']);
+
+    assert.equal(result.sources.massey.probability.available, false);
+    assert.match(result.sources.massey.probability.reason, /never a win probability/);
+    // Declined is reported, not silently missing.
+    assert.equal(Object.prototype.hasOwnProperty.call(result.scores, 'massey'), false);
+  });
+
+  it('reports the market-relative gate as insufficient_sample with no closes, and reads --markets when given', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    useLedger(t, ledgerWith([settledMoneylineBet()]));
+
+    const bare = await runRatings(['ratings', '--evaluate', '--json']);
+    assert.equal(bare.result.marketRelative.status, 'insufficient_sample');
+    assert.equal(bare.result.marketRelative.sampleSize, 0);
+    assert.equal(bare.result.markets, 0);
+
+    const marketsPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pp-ratings-markets-')), 'markets.json');
+    fs.writeFileSync(
+      marketsPath,
+      JSON.stringify([
+        { league: 'NCAAF', game: 'Pittsburgh vs Syracuse', marketFairProbability: 0.7, closingOdds: -233 }
+      ])
+    );
+    const withMarkets = await runRatings(['ratings', '--evaluate', '--json', '--markets', marketsPath]);
+
+    assert.equal(withMarkets.result.markets, 1);
+    assert.notEqual(withMarkets.result.marketRelative.sampleSize, 0, 'the supplied close reaches the gate');
+  });
+
+  it('renders the human path without throwing', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    useLedger(t, ledgerWith([settledMoneylineBet()]));
+
+    const { logs } = await runRatings(['ratings', '--evaluate']);
+
+    const rendered = logs.join('\n');
+    assert.match(rendered, /External-ratings evaluation/);
+    assert.match(rendered, /Market-relative gate/);
+    assert.match(rendered, /Fair & Oster/, 'the honest baseline is restated');
+  });
+});
