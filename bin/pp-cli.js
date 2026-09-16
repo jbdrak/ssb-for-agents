@@ -27,6 +27,7 @@ const { getSoccerEventIdentity } = require(PROJECT + '/lib/soccer-event-identity
 const { resolveScanLimit } = require(PROJECT + '/lib/ssb-scan-limit');
 const { correctTennisTimes } = require(PROJECT + '/lib/ssb-tennis');
 const { extractEventLinkRows, groupEventLinks } = require(PROJECT + '/lib/ssb-event-links');
+const { listSnapshots } = require(PROJECT + '/lib/ssb-ratings-snapshot');
 const reviewRecord = require(PROJECT + '/scripts/review-record');
 
 // ── book alias resolution ──────────────────────────────────────
@@ -198,6 +199,7 @@ Commands:
   wallets    Top Polymarket wallets vs a book (bet/pass)
   fantasy    Fantasy optimizer props
   health     Auth + backend health check
+  ratings    External-ratings snapshots (Massey/Sagarin/Sasser), read-only
   --mcp      Run as MCP stdio server (for Claude Desktop, Cursor, etc.)
 
 Run "pp <command> --help" for command-specific help.
@@ -422,6 +424,25 @@ Flags:
   health: `pp health
 
 Check auth + backend health. Always JSON output.
+`,
+  ratings: `pp ratings [flags]
+
+List the external-ratings benchmark snapshots (Massey / Sagarin / Sasser) that
+node scripts/refresh-ratings.js wrote to the local state dir
+(PP_RATINGS_DIR, default ~/.ssb-for-agents/ratings/).
+
+Read-only: this command never fetches and never contacts PropProfessor.
+
+Flags:
+  --source <a,b>            Filter by source (massey, sagarin, sasser)
+  --league <a,b>            Filter by league (CFB/CBB aliases map to NCAAF/NCAAB)
+  --season <a,b>            Filter by season
+  --show                    Print per-snapshot detail (method, asOf, fetchedAt, records, path)
+  -j, --json                Raw JSON output
+
+Examples:
+  pp ratings --source sagarin --league CFB --show
+  pp ratings --source massey,sasser --json
 `
 };
 
@@ -2319,6 +2340,100 @@ async function cmdHealth(handlers) {
   console.log(JSON.stringify(res, null, 2));
 }
 
+// ── ratings (external ratings snapshots) ─────────────────────────
+
+// The frontend/plan vocabulary says CFB/CBB; the canonical snapshot league is
+// NCAAF/NCAAB.
+const RATINGS_LEAGUE_ALIASES = { CFB: 'NCAAF', CBB: 'NCAAB' };
+
+function canonicalRatingsLeague(league) {
+  const code = String(league || '')
+    .trim()
+    .toUpperCase();
+  return RATINGS_LEAGUE_ALIASES[code] || code;
+}
+
+function ratingsList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value !== 'string') return [];
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Read the external-ratings snapshots (Massey / Sagarin / Sasser) that
+ * `node scripts/refresh-ratings.js` wrote to the local state dir
+ * (`PP_RATINGS_DIR`, default `~/.ssb-for-agents/ratings/`).
+ *
+ * Read-only on purpose: this command never fetches and never touches a
+ * PropProfessor client, so it is safe to run anywhere the network is not.
+ * Fetching is the refresh script's job.
+ */
+async function cmdRatings(positional, flags = {}) {
+  const jsonOut = flags.j === true || flags.json === true;
+  const show = flags.show === true;
+  const sources = ratingsList(flags.source).map((source) => source.toLowerCase());
+  const leagues = ratingsList(flags.league).map(canonicalRatingsLeague);
+  const seasons = ratingsList(flags.season)
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value));
+
+  const listed = listSnapshots();
+  if (!listed.ok) throw new Error('ratings: ' + (listed.errors || []).join('; '));
+
+  let snapshots = listed.snapshots;
+  if (sources.length) snapshots = snapshots.filter((snapshot) => sources.includes(snapshot.source));
+  if (leagues.length) snapshots = snapshots.filter((snapshot) => leagues.includes(snapshot.league));
+  if (seasons.length) snapshots = snapshots.filter((snapshot) => seasons.includes(snapshot.season));
+
+  if (jsonOut) {
+    console.log(JSON.stringify({ snapshots }, null, 2));
+    return { ok: true, snapshots };
+  }
+
+  if (snapshots.length === 0) {
+    console.log(
+      'No ratings snapshots found (run: node scripts/refresh-ratings.js --source <sources> --league <league>)'
+    );
+    return { ok: true, snapshots: [] };
+  }
+
+  if (!show) {
+    for (const snapshot of snapshots) {
+      if (!snapshot.valid) {
+        console.log(
+          `${snapshot.source} ${snapshot.league} ${snapshot.season} invalid (${(snapshot.errors || []).join('; ')})`
+        );
+        continue;
+      }
+      console.log(
+        `${snapshot.source} ${snapshot.league} ${snapshot.season} records=${snapshot.recordCount}` +
+          ` asOf=${snapshot.asOf || '-'} fetchedAt=${snapshot.fetchedAt || '-'}`
+      );
+    }
+    return { ok: true, snapshots };
+  }
+
+  for (const snapshot of snapshots) {
+    if (!snapshot.valid) {
+      console.log(`\n${B}${snapshot.source} ${snapshot.league} ${snapshot.season}${R}  invalid`);
+      console.log(`  errors: ${(snapshot.errors || []).join('; ')}`);
+      console.log(`  path: ${snapshot.path}`);
+      continue;
+    }
+    console.log(`\n${B}${snapshot.source} ${snapshot.league} ${snapshot.season}${R}`);
+    console.log(`  method: ${snapshot.method}`);
+    console.log(`  asOf: ${snapshot.asOf}  |  fetchedAt: ${snapshot.fetchedAt}`);
+    console.log(`  records: ${snapshot.recordCount}`);
+    console.log(`  sourceUrl: ${snapshot.sourceUrl}`);
+    console.log(`  sourceHash: ${snapshot.sourceHash}`);
+    console.log(`  path: ${snapshot.path}`);
+  }
+  return { ok: true, snapshots };
+}
+
 // ── main ────────────────────────────────────────────────────────
 
 async function main() {
@@ -2424,6 +2539,9 @@ async function main() {
     case 'health':
       await cmdHealth(handlers);
       break;
+    case 'ratings':
+      await cmdRatings(positional, flags);
+      break;
     default:
       console.error('Unknown command: ' + (resolvedCmd || command));
       printHelp('');
@@ -2455,6 +2573,7 @@ module.exports = {
   cmdRecordCard,
   cmdRecord,
   cmdLinks,
+  cmdRatings,
   resolveWalletDate,
   parseCardInput,
   formatScan,

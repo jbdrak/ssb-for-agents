@@ -167,27 +167,124 @@ play responses.
 
 ### External-model benchmark adapters
 
-For a third-party prediction source such as Sagarin, use the pure adapter
-`lib/sagarin-external-evaluation.js` rather than changing the live ranking path or
-v2 ledger. It normalizes outcomes, preserves prediction/source timestamps,
-normalizes FBS/FCS segments, keeps unmatched rows visible, and marks missing,
-invalid, or post-decision provenance as unresolved. Unresolved and unmatched rows
-are excluded from score denominators rather than silently graded.
+Third-party rating and prediction sources (Massey, Sagarin, Sasser) live in a
+**shadow / benchmark layer** that is deliberately never wired into live `BET`
+eligibility. Ratings are additive context for evaluation; they must not change
+`kaiCall`, `displayTier`, `confidenceTier`, `finalVerdict`, `consensusEdge`,
+`screenScore`, or `riskScore`. The overlay's two-run invariant test proves it
+leaves every one of those fields identical at the module level (see the wiring
+note below).
 
-- `normalizeSagarinRows(rows)` returns chronologically ordered rows plus an
-  `unresolved` list.
-- `scoreSagarinRows(rows)` delegates probability scoring to
-  `scoreEvaluationRows` using only `modelWinProbability`.
-- `segmentSagarinRows(rows, { minSample })` delegates competition segmentation
-  to `segmentEvaluationRows`.
+Prefer these adapters over changing the live ranking path or the v2 ledger.
 
-Store the external snapshot separately from settled SSB bets. Record
-the source URL, retrieval time, prediction method, result source, competition
-level, market/price context, and matched/unmatched status. A one-week winner rate
-is descriptive only; compare external probabilities with the de-vigged market,
-closing-line value, calibration, ROI, and drawdown before changing a live weight.
-See `docs/research/sagarin-ncaaf-benchmark-2026-09-06.md` for the verified NCAAF
-snapshot and its source caveats.
+**One contract, N sources**
+
+- `lib/ssb-ratings-contract.js` — the normalized record every source produces
+  (`source`, `method`, `league`, `season`, `asOf`, `fetchedAt`, `sourceUrl`,
+  `sourceHash`, `teamA/teamB`, `ratingA/ratingB`, `predictedScoreA/B`,
+  `predictedTotal`, `predictedMargin`, `homeAdvantage`, `marketOpen`,
+  `marketCurrent`, `coverage`, `matchStatus`, `unresolvedReason`). Validation is
+  pure and fails closed: an unusable numeric becomes `null` and forces
+  `coverage: 'partial'`; a missing `sourceUrl`/`sourceHash`/`fetchedAt` is an
+  error; an `unresolved` record must carry a reason.
+- `lib/ratings-sources/massey.js`, `.../sagarin.js`, `.../sasser.js` — one pure
+  adapter per source, each with an **injected** `fetchImpl` (no test path can
+  reach the network) and a pure `normalizeX`. See the coverage table below.
+- `lib/ssb-ratings-snapshot.js` — versioned, hash-carrying snapshots in the local
+  state dir, never the repo (see below).
+- `lib/ssb-ratings-overlay.js` — additive `applyRatingsOverlay`: attaches
+  `row.ratings = { massey, sagarin, sasser }` on the **composite**
+  `(league, canonical game identity, market)` key, only adds (never clobbers a
+  pre-existing `row.ratings`), and fails closed with `null` on any unresolvable
+  team/league/matchup.
+- `lib/ssb-external-ratings-evaluation.js` — source-agnostic
+  normalize → score → segment machinery. `scoreRatingRows` / `segmentRatingRows`
+  delegate to `scoreEvaluationRows` / `segmentEvaluationRows`; `evaluateRatingSources`
+  scores each source **independently** (no composite blend); `evaluateMarketRelative`
+  is the gate that compares each source against the de-vigged close.
+
+**Wiring status: the overlay is built and tested but not yet invoked from any
+production call site.** `applyRatingsOverlay` / `canonicalGameKey` are required
+only by `test/ratings-overlay.test.js`, and nothing in the scan path calls them,
+so a live scan does not emit a `ratings` field today. The rank-neutrality result
+is therefore **module-level** (the two-run invariant test in
+`test/ratings-overlay.test.js` proves the overlay leaves every ranking/tier/
+verdict/score field identical), not a proven live-path result. A `ratings` key is
+whitelisted into the feature snapshot in `lib/record-candidates.js`, so an
+overlay run would survive into the ledger, but wiring the overlay into a
+production path is separate, explicit follow-up work.
+
+The Sagarin-only helper `lib/sagarin-external-evaluation.js` is retained and now
+delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
+`segmentSagarinRows`, FBS/FCS segmentation) with its behavior unchanged. Keep
+`test/sagarin-evaluation.test.js` green; generalize by extraction, not deletion.
+
+**Per-source coverage (canonical repo league codes)**
+
+| Source  | Leagues                                      | Notes                                                                                            |
+| ------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Massey  | CFB→`NCAAF`, NFL, NBA, NHL, MLB, MLS, WNBA   | The only source with MLB **team** ratings. NCAAB is a deliberate adapter scope gap.              |
+| Sagarin | CFB→`NCAAF`, NFL, NBA, CBB→`NCAAB`, NHL, MLS | **No MLB team ratings** — Sagarin's baseball page is player ratings.                             |
+| Sasser  | CFB→`NCAAF` only                             | A per-game projection overlay, not a rating (`ratingA/B` null, `coverage: 'partial'` by design). |
+
+A league a source does not publish returns `coverage: 'unavailable'` with a
+stated reason, and the refresh never fetches it — an empty ratings table and a
+quiet slate must not look alike. Unsupported is kept distinct from an
+unrecognized code: a real canonical league the source does not cover names the
+source and the sport, while only a code outside the repo's league registry is a
+caller typo.
+
+**Snapshots live outside the repo**
+
+Store every external snapshot separately from settled SSB bets, under
+`PP_RATINGS_DIR` (default `~/.ssb-for-agents/ratings/`), as
+`<source>-<league>-<season>.json` (`schemaVersion: 1`). No third-party dataset is
+bundled in the repo: Massey's terms reserve all rights, so only derived records
+plus a `sourceHash` are kept, and the store refuses a write anywhere inside the
+repo. The store also fails closed on read: a snapshot whose `sourceHash` does not
+match its records is rejected, and one whose `asOf` predates a supplied cutoff
+loads as `stale: true` rather than silently current.
+
+Each snapshot records the source URL, retrieval time, prediction method, season,
+`asOf`, and `sourceHash`. Keep the source's own `asOf` (its "through games of" /
+"Using games thru" / "Updated" line) **separate** from our `fetchedAt`; the two
+observably diverge. See `docs/research/external-ratings-sources-2026-09.md` for
+the per-source caveats.
+
+**Market-relative gate**
+
+A one-week winner rate is descriptive only; it is not a betting edge. Compare
+every external probability with the **de-vigged closing line** (CLV, ROI,
+drawdown) alongside Brier score, log loss, and reliability, chronologically and
+segmented by league, level (FBS/FCS), favorite band, and market. Report sample
+and coverage before any score, and flag `insufficient_sample` below the
+threshold instead of reporting a number. Restate the honest baseline in the
+output: Fair & Oster found computer rankings add no information on top of the
+Vegas spread, so the expected value here is **context and veto, not edge**. Do
+not promote an external probability into a live weight before chronological
+out-of-sample evidence beats the close.
+
+`docs/research/sagarin-ncaaf-benchmark-2026-09-06.md` remains the verified NCAAF
+snapshot (118 rows, 90 matched, 81 correct, 28 unmatched excluded) and its source
+caveats.
+
+**Refresh (PP-free, schedulable) and read-back**
+
+```bash
+node scripts/refresh-ratings.js --source massey,sagarin,sasser --league NCAAF
+pp ratings --source sagarin --league CFB --show   # read snapshots, no fetch
+```
+
+`scripts/refresh-ratings.js` fans out per source/league with an injected
+transport and **never aborts the batch**: a throwing pair, an unsupported league,
+or a page with no readable rows becomes its own result row (`error` /
+`unsupported` / `unavailable`), and the process exits non-zero only when no pair
+succeeded. It imports no PropProfessor client, calls no SSB endpoint, and
+installs no cron/watcher/startup hook — refreshing third-party pages is the
+allowed schedulable category (same as `resolve-outcomes.js --espn` and
+`refresh-tennis-circuit.js`), while anything that calls SSB is not. `pp ratings`
+is a read-only snapshot reader (CFB/CBB aliases map to NCAAF/NCAAB); it never
+fetches.
 
 ## Daily snapshot + outcome-resolution pipeline (real P&L over time)
 

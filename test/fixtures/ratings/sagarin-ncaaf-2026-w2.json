@@ -1,0 +1,1093 @@
+{
+  "schemaVersion": 1,
+  "source": "sagarin",
+  "league": "NCAAF",
+  "method": "overall",
+  "block": "regular",
+  "season": 2026,
+  "asOf": "2026-08-29",
+  "fetchedAt": "2026-09-06T22:00:00.000Z",
+  "sourceUrl": "http://sagarin.com/sports/cfsend.htm",
+  "provenance": {
+    "derivedFrom": "docs/research/sagarin-ncaaf-benchmark-2026-09-06.md",
+    "verifiedAgainst": "ESPN dated college-football scoreboard feeds for 2026-09-03..2026-09-06",
+    "caveats": [
+      "SYNTHETIC BUT REPRESENTATIVE: the row set is reconstructed from the benchmark doc’s verified counts, not a live Sagarin fetch, and does not imply a stable 90% model estimate.",
+      "Mixed FBS/FCS competition: the doc’s nine misses include FCS games, so any future report must segment competition level and favorite size.",
+      "The stale-heading condition is intentional: asOf (2026-08-29) is the page’s “through games of” line while the rows are the Sep 3-6 slate, so asOf must stay separate from fetchedAt.",
+      "The 28 excluded rows are unverifiable results, not losses; they must stay out of every denominator."
+    ]
+  },
+  "pageLines": [
+    "Predictions_with_Totals_and_Moneylines",
+    "",
+    "2026 College Football through games of August 29 Saturday - Week 1",
+    "HOME ADVANTAGE=                  2.41   2.41   2.41   2.41   2.41",
+    "",
+    "          FAVORITE             Rating   Pred  Golden Recent Strong  UNDERDOG                MONEY  WIN%    home   away  TOTAL  HMARG WIN% MONEY",
+    "1 @ Rutgers 1.00 0.50 -0.10 1.20 1.00 Massachusetts 100 50% 23.00 16.00 39.00 1.00 50% 100",
+    "2 @ Georgia Tech 1.70 0.80 0.90 2.40 2.30 Colorado 101 51% 24.10 17.10 41.20 1.70 51% 101",
+    "3 @ Charlotte 2.40 1.10 1.90 3.60 3.60 The Citadel 102 52% 25.20 18.20 43.40 2.40 52% 102",
+    "4 @ Hawaii 3.10 2.60 2.90 4.80 4.90 UNLV 103 53% 26.30 19.30 45.60 3.10 53% 103",
+    "5 @ Western Kentucky 3.80 2.90 3.90 4.00 6.20 Nevada 104 54% 27.40 20.40 47.80 3.80 54% 104",
+    "6 @ Oklahoma State 4.50 3.20 3.40 5.20 7.50 Tulsa 105 55% 28.50 21.50 50.00 4.50 55% 105",
+    "7 @ Utah State 5.20 4.70 4.40 6.40 8.80 Idaho State 106 56% 29.60 22.60 52.20 5.20 56% 106",
+    "8 @ Wisconsin 5.90 5.00 5.40 7.60 5.90 Notre Dame 107 57% 30.70 23.00 53.70 5.90 57% 107",
+    "9 @ Louisville 6.60 5.30 6.40 6.80 7.20 Ole Miss 108 58% 31.80 24.10 55.90 6.60 58% 108",
+    "10 @ Washington 7.30 6.80 7.40 8.00 8.50 Washington State 109 59% 32.90 25.20 58.10 7.30 59% 109",
+    "11 N Michigan 8.00 7.10 6.90 9.20 9.80 @ Clemson 110 60% 33.00 26.30 59.30 8.00 60% 110",
+    "12 @ Ohio State 8.70 7.40 7.90 10.40 11.10 Penn State 111 61% 34.10 16.40 50.50 8.70 61% 111",
+    "13 @ Georgia 9.40 8.90 8.90 9.60 12.40 Florida 112 62% 35.20 17.50 52.70 9.40 62% 112",
+    "14 @ Alabama 10.10 9.20 9.90 10.80 13.70 Miami 113 63% 23.30 18.60 41.90 10.10 63% 113",
+    "15 @ Texas 10.80 9.50 10.90 12.00 10.80 Minnesota 114 64% 24.40 19.00 43.40 10.80 64% 114",
+    "16 @ Clemson 11.50 11.00 10.40 13.20 12.10 Baylor 115 65% 25.50 20.10 45.60 11.50 65% 115",
+    "17 @ USC 12.20 11.30 11.40 12.40 13.40 Iowa State 116 66% 26.60 21.20 47.80 12.20 66% 116",
+    "18 @ Oklahoma 12.90 11.60 12.40 13.60 14.70 Cincinnati 117 67% 27.70 22.30 50.00 12.90 67% 117",
+    "19 @ Penn State 13.60 13.10 13.40 14.80 16.00 Memphis 118 68% 28.80 23.40 52.20 13.60 68% 118",
+    "20 @ Oregon 1.30 0.40 1.40 3.00 4.30 Pittsburgh 119 69% 29.90 24.50 54.40 1.30 69% 119",
+    "21 @ LSU 2.00 0.70 0.90 2.20 5.60 Wake Forest 120 70% 30.00 25.60 55.60 2.00 70% 120",
+    "22 N Florida 2.70 2.20 1.90 3.40 2.70 @ Boston College 121 71% 31.10 26.00 57.10 2.70 71% 121",
+    "23 @ Auburn 3.40 2.50 2.90 4.60 4.00 Missouri 122 72% 32.20 16.10 48.30 3.40 72% 122",
+    "24 @ Tennessee 4.10 2.80 3.90 5.80 5.30 Vanderbilt 123 73% 33.30 17.20 50.50 4.10 73% 123",
+    "25 @ Miami 4.80 4.30 4.90 5.00 6.60 Stanford 124 74% 34.40 18.30 52.70 4.80 74% 124",
+    "26 @ Iowa 5.50 4.60 4.40 6.20 7.90 UCLA 125 75% 35.50 19.40 54.90 5.50 75% 125",
+    "27 @ Nebraska 6.20 4.90 5.40 7.40 9.20 Illinois 126 76% 23.60 20.50 44.10 6.20 76% 126",
+    "28 @ Minnesota 6.90 6.40 6.40 8.60 10.50 Maryland 127 77% 24.70 21.60 46.30 6.90 77% 127",
+    "29 @ Utah 7.60 6.70 7.40 7.80 7.60 Boise State 128 78% 25.80 22.00 47.80 7.60 78% 128",
+    "30 @ BYU 8.30 7.00 8.40 9.00 8.90 Wyoming 129 79% 26.90 23.10 50.00 8.30 79% 129",
+    "31 @ Baylor 9.00 8.50 7.90 10.20 10.20 Georgia 130 80% 27.00 24.20 51.20 9.00 80% 130",
+    "32 @ TCU 9.70 8.80 8.90 11.40 11.50 Clemson 131 81% 28.10 25.30 53.40 9.70 81% 131",
+    "33 N Kansas State 10.40 9.10 9.90 10.60 12.80 @ Penn State 132 82% 29.20 26.40 55.60 10.40 82% 132",
+    "34 @ Iowa State 11.10 10.60 10.90 11.80 14.10 Florida 133 83% 30.30 16.50 46.80 11.10 83% 133",
+    "35 @ Texas Tech 11.80 10.90 11.90 13.00 15.40 Miami 134 84% 31.40 17.60 49.00 11.80 84% 134",
+    "36 @ West Virginia 12.50 11.20 11.40 14.20 12.50 Minnesota 135 85% 32.50 18.00 50.50 12.50 85% 135",
+    "37 @ Cincinnati 13.20 12.70 12.40 13.40 13.80 Baylor 136 86% 33.60 19.10 52.70 13.20 86% 136",
+    "38 @ Houston 13.90 13.00 13.40 14.60 15.10 Iowa State 137 87% 34.70 20.20 54.90 13.90 87% 137",
+    "39 @ UCF 1.60 0.30 1.40 2.80 3.40 Cincinnati 138 88% 35.80 21.30 57.10 1.60 88% 138",
+    "40 @ Memphis 2.30 1.80 2.40 4.00 4.70 SMU 139 89% 23.90 22.40 46.30 2.30 89% 139",
+    "41 @ SMU 3.00 2.10 1.90 3.20 6.00 Pittsburgh 140 90% 24.00 23.50 47.50 3.00 90% 140",
+    "42 @ Tulane 3.70 2.40 2.90 4.40 7.30 Wake Forest 141 91% 25.10 24.60 49.70 3.70 91% 141",
+    "43 @ Pittsburgh 4.40 3.90 3.90 5.60 4.40 Boston College 142 92% 26.20 25.00 51.20 4.40 92% 142",
+    "44 N Virginia Tech 5.10 4.20 4.90 6.80 5.70 @ Missouri 143 93% 27.30 26.10 53.40 5.10 93% 143",
+    "45 @ NC State 5.80 4.50 5.90 6.00 7.00 Vanderbilt 144 94% 28.40 16.20 44.60 5.80 94% 144",
+    "46 @ Wake Forest 6.50 6.00 5.40 7.20 8.30 Stanford 145 95% 29.50 17.30 46.80 6.50 95% 145",
+    "47 @ Duke 7.20 6.30 6.40 8.40 9.60 UCLA 146 96% 30.60 18.40 49.00 7.20 96% 146",
+    "48 @ Syracuse 7.90 6.60 7.40 9.60 10.90 Illinois 147 97% 31.70 19.50 51.20 7.90 97% 147",
+    "49 @ Boston College 8.60 8.10 8.40 8.80 12.20 Maryland 148 98% 32.80 20.60 53.40 8.60 98% 148",
+    "50 @ Arkansas 9.30 8.40 9.40 10.00 9.30 Boise State 149 50% 33.90 21.00 54.90 9.30 50% 149",
+    "51 @ Mississippi State 10.00 8.70 8.90 11.20 10.60 Wyoming 150 51% 34.00 22.10 56.10 10.00 51% 150",
+    "52 @ Missouri 10.70 10.20 9.90 12.40 11.90 Georgia 151 52% 35.10 23.20 58.30 10.70 52% 151",
+    "53 @ South Carolina 11.40 10.50 10.90 11.60 13.20 Clemson 152 53% 23.20 24.30 47.50 11.40 53% 152",
+    "54 @ Kentucky 12.10 10.80 11.90 12.80 14.50 Penn State 153 54% 24.30 25.40 49.70 12.10 54% 153",
+    "55 N Vanderbilt 12.80 12.30 12.90 14.00 15.80 @ Florida 154 55% 25.40 26.50 51.90 12.80 55% 154",
+    "56 @ Oregon State 13.50 12.60 12.40 15.20 17.10 Miami 155 56% 26.50 16.60 43.10 13.50 56% 155",
+    "57 @ California 1.20 -0.10 0.40 1.40 1.20 Minnesota 156 57% 27.60 17.00 44.60 1.20 57% 156",
+    "58 @ Stanford 1.90 1.40 1.40 2.60 2.50 Baylor 157 58% 28.70 18.10 46.80 1.90 58% 157",
+    "59 @ Arizona 2.60 1.70 2.40 3.80 3.80 Iowa State 158 59% 29.80 19.20 49.00 2.60 59% 158",
+    "60 @ Arizona State 3.30 2.00 3.40 5.00 5.10 Cincinnati 159 60% 30.90 20.30 51.20 3.30 60% 159",
+    "61 @ UCLA 4.00 3.50 2.90 4.20 6.40 Memphis 160 61% 31.00 21.40 52.40 4.00 61% 160",
+    "62 @ Purdue 4.70 3.80 3.90 5.40 7.70 Pittsburgh 161 62% 32.10 22.50 54.60 4.70 62% 161",
+    "63 @ Indiana 5.40 4.10 4.90 6.60 9.00 Wake Forest 162 63% 33.20 23.60 56.80 5.40 63% 162",
+    "64 @ Illinois 6.10 5.60 5.90 7.80 6.10 Boston College 163 64% 34.30 24.00 58.30 6.10 64% 163",
+    "65 @ Northwestern 6.80 5.90 6.90 7.00 7.40 Missouri 164 65% 35.40 25.10 60.50 6.80 65% 164",
+    "66 N Michigan State 7.50 6.20 6.40 8.20 8.70 @ Vanderbilt 165 66% 23.50 26.20 49.70 7.50 66% 165",
+    "67 @ Maryland 8.20 7.70 7.40 9.40 10.00 Stanford 166 67% 24.60 16.30 40.90 8.20 67% 166",
+    "68 @ Army 8.90 8.00 8.40 10.60 11.30 UCLA 167 68% 25.70 17.40 43.10 8.90 68% 167",
+    "69 @ Air Force 9.60 8.30 9.40 9.80 12.60 Illinois 168 69% 26.80 18.50 45.30 9.60 69% 168",
+    "70 @ Boise State 10.30 9.80 10.40 11.00 13.90 Maryland 169 70% 27.90 19.60 47.50 10.30 70% 169",
+    "71 @ Fresno State 11.00 10.10 9.90 12.20 11.00 Boise State 170 71% 28.00 20.00 48.00 11.00 71% 170",
+    "72 @ San Diego State 11.70 10.40 10.90 13.40 12.30 Wyoming 171 72% 29.10 21.10 50.20 11.70 72% 171",
+    "73 @ Wyoming 12.40 11.90 11.90 12.60 13.60 Georgia 172 73% 30.20 22.20 52.40 12.40 73% 172",
+    "74 @ Michigan 13.10 12.20 12.90 13.80 14.90 Clemson 173 74% 31.30 23.30 54.60 13.10 74% 173",
+    "75 @ Ohio State 13.80 12.50 13.90 15.00 16.20 Penn State 174 75% 32.40 24.40 56.80 13.80 75% 174",
+    "76 @ Georgia 1.50 1.00 0.40 3.20 4.50 Florida 175 76% 33.50 25.50 59.00 1.50 76% 175",
+    "77 N Alabama 2.20 1.30 1.40 2.40 5.80 @ Miami 176 77% 34.60 26.60 61.20 2.20 77% 176",
+    "78 @ Texas 2.90 1.60 2.40 3.60 2.90 Minnesota 177 78% 35.70 16.00 51.70 2.90 78% 177",
+    "79 @ Clemson 3.60 3.10 3.40 4.80 4.20 Baylor 178 79% 23.80 17.10 40.90 3.60 79% 178",
+    "80 @ USC 4.30 3.40 4.40 6.00 5.50 Iowa State 179 80% 24.90 18.20 43.10 4.30 80% 179",
+    "81 @ Oklahoma 5.00 3.70 3.90 5.20 6.80 Cincinnati 180 81% 25.00 19.30 44.30 5.00 81% 180",
+    "82 @ Penn State 5.70 5.20 4.90 6.40 8.10 Memphis 181 82% 26.10 20.40 46.50 5.70 82% 181",
+    "83 @ Oregon 6.40 5.50 5.90 7.60 9.40 Pittsburgh 182 83% 27.20 21.50 48.70 6.40 83% 182",
+    "84 @ LSU 7.10 5.80 6.90 8.80 10.70 Wake Forest 183 84% 28.30 22.60 50.90 7.10 84% 183",
+    "85 @ Florida 7.80 7.30 7.90 8.00 7.80 Boston College 184 85% 29.40 23.00 52.40 7.80 85% 184",
+    "86 @ Auburn 8.50 7.60 7.40 9.20 9.10 Missouri 185 86% 30.50 24.10 54.60 8.50 86% 185",
+    "87 @ Tennessee 9.20 7.90 8.40 10.40 10.40 Vanderbilt 186 87% 31.60 25.20 56.80 9.20 87% 186",
+    "88 N Miami 9.90 9.40 9.40 11.60 11.70 @ Stanford 187 88% 32.70 26.30 59.00 9.90 88% 187",
+    "89 @ Iowa 10.60 9.70 10.40 10.80 13.00 UCLA 188 89% 33.80 16.40 50.20 10.60 89% 188",
+    "90 @ Nebraska 11.30 10.00 11.40 12.00 14.30 Illinois 189 90% 34.90 17.50 52.40 11.30 90% 189",
+    "91 @ North Dakota State 12.00 11.50 10.90 13.20 15.60 Montana State 190 91% 35.00 18.60 53.60 12.00 91% 190",
+    "92 @ South Dakota State 12.70 11.80 11.90 14.40 12.70 Furman 191 92% 23.10 19.00 42.10 12.70 92% 191",
+    "93 @ Montana 13.40 12.10 12.90 13.60 14.00 William & Mary 192 93% 24.20 20.10 44.30 13.40 93% 192",
+    "94 @ Montana State 1.10 0.60 0.90 1.80 2.30 Jacksonville State 193 94% 25.30 21.20 46.50 1.10 94% 193",
+    "95 @ Villanova 1.80 0.90 1.90 3.00 3.60 Tennessee State 194 95% 26.40 22.30 48.70 1.80 95% 194",
+    "96 @ Delaware 2.50 1.20 1.40 4.20 4.90 Youngstown State 195 96% 27.50 23.40 50.90 2.50 96% 195",
+    "97 @ James Madison 3.20 2.70 2.40 3.40 6.20 UC Davis 196 97% 28.60 24.50 53.10 3.20 97% 196",
+    "98 @ Elon 3.90 3.00 3.40 4.60 7.50 Southern Utah 197 98% 29.70 25.60 55.30 3.90 98% 197",
+    "99 N Furman 4.60 3.30 4.40 5.80 4.60 @ Villanova 198 50% 30.80 26.00 56.80 4.60 50% 198",
+    "100 @ Wofford 5.30 4.80 5.40 7.00 5.90 Samford 199 51% 31.90 16.10 48.00 5.30 51% 199",
+    "101 @ Samford 6.00 5.10 4.90 6.20 7.20 New Hampshire 200 52% 32.00 17.20 49.20 6.00 52% 200",
+    "102 @ Chattanooga 6.70 5.40 5.90 7.40 8.50 Kennesaw State 201 53% 33.10 18.30 51.40 6.70 53% 201",
+    "103 @ Richmond 7.40 6.90 6.90 8.60 9.80 Southern Illinois 202 54% 34.20 19.40 53.60 7.40 54% 202",
+    "104 @ William & Mary 8.10 7.20 7.90 9.80 11.10 Western Illinois 203 55% 35.30 20.50 55.80 8.10 55% 203",
+    "105 @ New Hampshire 8.80 7.50 8.90 9.00 12.40 Cal Poly 204 56% 23.40 21.60 45.00 8.80 56% 204",
+    "106 @ Maine 9.50 9.00 8.40 10.20 9.50 North Dakota State 205 57% 24.50 22.00 46.50 9.50 57% 205",
+    "107 @ Albany 10.20 9.30 9.40 11.40 10.80 Delaware 206 58% 25.60 23.10 48.70 10.20 58% 206",
+    "108 @ Stony Brook 10.90 9.60 10.40 12.60 12.10 Samford 207 59% 26.70 24.20 50.90 10.90 59% 207",
+    "109 @ Jacksonville State 11.60 11.10 11.40 11.80 13.40 Maine 208 60% 27.80 25.30 53.10 11.60 60% 208",
+    "110 N Kennesaw State 12.30 11.40 12.40 13.00 14.70 @ Eastern Kentucky 209 61% 28.90 26.40 55.30 12.30 61% 209",
+    "111 @ Eastern Kentucky 13.00 11.70 11.90 14.20 16.00 Northern Iowa 210 62% 29.00 16.50 45.50 13.00 62% 210",
+    "112 @ Austin Peay 13.70 13.20 12.90 15.40 17.30 Missouri State 211 63% 30.10 17.60 47.70 13.70 63% 211",
+    "113 @ Murray State 1.40 0.50 0.90 1.60 1.40 Sacramento State 212 64% 31.20 18.00 49.20 1.40 64% 212",
+    "114 @ Tennessee State 2.10 0.80 1.90 2.80 2.70 South Dakota State 213 65% 32.30 19.10 51.40 2.10 65% 213",
+    "115 @ Southern Illinois 2.80 2.30 2.90 4.00 4.00 James Madison 214 66% 33.40 20.20 53.60 2.80 66% 214",
+    "116 @ Northern Iowa 3.50 2.60 2.40 5.20 5.30 Chattanooga 215 67% 34.50 21.30 55.80 3.50 67% 215",
+    "117 @ Illinois State 4.20 2.90 3.40 4.40 6.60 Albany 216 68% 35.60 22.40 58.00 4.20 68% 216",
+    "118 @ Indiana State 4.90 4.40 4.40 5.60 7.90 Austin Peay 217 69% 23.70 23.50 47.20 4.90 69% 217"
+  ],
+  "games": [
+    {
+      "favorite": "Rutgers",
+      "underdog": "Massachusetts",
+      "date": "2026-09-03",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Georgia Tech",
+      "underdog": "Colorado",
+      "date": "2026-09-03",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Charlotte",
+      "underdog": "The Citadel",
+      "date": "2026-09-05",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FCS"
+    },
+    {
+      "favorite": "Hawaii",
+      "underdog": "UNLV",
+      "date": "2026-09-05",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Western Kentucky",
+      "underdog": "Nevada",
+      "date": "2026-09-05",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Oklahoma State",
+      "underdog": "Tulsa",
+      "date": "2026-09-05",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Utah State",
+      "underdog": "Idaho State",
+      "date": "2026-09-05",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FCS"
+    },
+    {
+      "favorite": "Wisconsin",
+      "underdog": "Notre Dame",
+      "date": "2026-09-06",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Louisville",
+      "underdog": "Ole Miss",
+      "date": "2026-09-06",
+      "outcome": "loss",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Washington",
+      "underdog": "Washington State",
+      "date": "2026-09-06",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Michigan",
+      "underdog": "Clemson",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Ohio State",
+      "underdog": "Penn State",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Georgia",
+      "underdog": "Florida",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Alabama",
+      "underdog": "Miami",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Texas",
+      "underdog": "Minnesota",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Clemson",
+      "underdog": "Baylor",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "USC",
+      "underdog": "Iowa State",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Oklahoma",
+      "underdog": "Cincinnati",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Penn State",
+      "underdog": "Memphis",
+      "date": "2026-09-03",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Oregon",
+      "underdog": "Pittsburgh",
+      "date": "2026-09-04",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "LSU",
+      "underdog": "Wake Forest",
+      "date": "2026-09-04",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Florida",
+      "underdog": "Boston College",
+      "date": "2026-09-04",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Auburn",
+      "underdog": "Missouri",
+      "date": "2026-09-04",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Tennessee",
+      "underdog": "Vanderbilt",
+      "date": "2026-09-04",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Miami",
+      "underdog": "Stanford",
+      "date": "2026-09-04",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Iowa",
+      "underdog": "UCLA",
+      "date": "2026-09-04",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Nebraska",
+      "underdog": "Illinois",
+      "date": "2026-09-04",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Minnesota",
+      "underdog": "Maryland",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Utah",
+      "underdog": "Boise State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "BYU",
+      "underdog": "Wyoming",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Baylor",
+      "underdog": "Georgia",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "TCU",
+      "underdog": "Clemson",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Kansas State",
+      "underdog": "Penn State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Iowa State",
+      "underdog": "Florida",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Texas Tech",
+      "underdog": "Miami",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "West Virginia",
+      "underdog": "Minnesota",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Cincinnati",
+      "underdog": "Baylor",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Houston",
+      "underdog": "Iowa State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "UCF",
+      "underdog": "Cincinnati",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Memphis",
+      "underdog": "SMU",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "SMU",
+      "underdog": "Pittsburgh",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Tulane",
+      "underdog": "Wake Forest",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Pittsburgh",
+      "underdog": "Boston College",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Virginia Tech",
+      "underdog": "Missouri",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "NC State",
+      "underdog": "Vanderbilt",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Wake Forest",
+      "underdog": "Stanford",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Duke",
+      "underdog": "UCLA",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Syracuse",
+      "underdog": "Illinois",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Boston College",
+      "underdog": "Maryland",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Arkansas",
+      "underdog": "Boise State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Mississippi State",
+      "underdog": "Wyoming",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Missouri",
+      "underdog": "Georgia",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "South Carolina",
+      "underdog": "Clemson",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Kentucky",
+      "underdog": "Penn State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Vanderbilt",
+      "underdog": "Florida",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Oregon State",
+      "underdog": "Miami",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "California",
+      "underdog": "Minnesota",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Stanford",
+      "underdog": "Baylor",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Arizona",
+      "underdog": "Iowa State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Arizona State",
+      "underdog": "Cincinnati",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "UCLA",
+      "underdog": "Memphis",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Purdue",
+      "underdog": "Pittsburgh",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Indiana",
+      "underdog": "Wake Forest",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Illinois",
+      "underdog": "Boston College",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Northwestern",
+      "underdog": "Missouri",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Michigan State",
+      "underdog": "Vanderbilt",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Maryland",
+      "underdog": "Stanford",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Army",
+      "underdog": "UCLA",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Air Force",
+      "underdog": "Illinois",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Boise State",
+      "underdog": "Maryland",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Fresno State",
+      "underdog": "Boise State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "San Diego State",
+      "underdog": "Wyoming",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Wyoming",
+      "underdog": "Georgia",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Michigan",
+      "underdog": "Clemson",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Ohio State",
+      "underdog": "Penn State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Georgia",
+      "underdog": "Florida",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Alabama",
+      "underdog": "Miami",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Texas",
+      "underdog": "Minnesota",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Clemson",
+      "underdog": "Baylor",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "USC",
+      "underdog": "Iowa State",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Oklahoma",
+      "underdog": "Cincinnati",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Penn State",
+      "underdog": "Memphis",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Oregon",
+      "underdog": "Pittsburgh",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "LSU",
+      "underdog": "Wake Forest",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Florida",
+      "underdog": "Boston College",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Auburn",
+      "underdog": "Missouri",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Tennessee",
+      "underdog": "Vanderbilt",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Miami",
+      "underdog": "Stanford",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Iowa",
+      "underdog": "UCLA",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "Nebraska",
+      "underdog": "Illinois",
+      "date": "2026-09-05",
+      "outcome": "win",
+      "matched": true,
+      "segment": "FBS"
+    },
+    {
+      "favorite": "North Dakota State",
+      "underdog": "Montana State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "South Dakota State",
+      "underdog": "Furman",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Montana",
+      "underdog": "William & Mary",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Montana State",
+      "underdog": "Jacksonville State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Villanova",
+      "underdog": "Tennessee State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Delaware",
+      "underdog": "Youngstown State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "James Madison",
+      "underdog": "UC Davis",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Elon",
+      "underdog": "Southern Utah",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Furman",
+      "underdog": "Villanova",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Wofford",
+      "underdog": "Samford",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Samford",
+      "underdog": "New Hampshire",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Chattanooga",
+      "underdog": "Kennesaw State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Richmond",
+      "underdog": "Southern Illinois",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "William & Mary",
+      "underdog": "Western Illinois",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "New Hampshire",
+      "underdog": "Cal Poly",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Maine",
+      "underdog": "North Dakota State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Albany",
+      "underdog": "Delaware",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Stony Brook",
+      "underdog": "Samford",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Jacksonville State",
+      "underdog": "Maine",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Kennesaw State",
+      "underdog": "Eastern Kentucky",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Eastern Kentucky",
+      "underdog": "Northern Iowa",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Austin Peay",
+      "underdog": "Missouri State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Murray State",
+      "underdog": "Sacramento State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Tennessee State",
+      "underdog": "South Dakota State",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Southern Illinois",
+      "underdog": "James Madison",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Northern Iowa",
+      "underdog": "Chattanooga",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Illinois State",
+      "underdog": "Albany",
+      "segment": "FCS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    },
+    {
+      "favorite": "Indiana State",
+      "underdog": "Austin Peay",
+      "segment": "FBS",
+      "date": null,
+      "outcome": null,
+      "matched": false
+    }
+  ]
+}
