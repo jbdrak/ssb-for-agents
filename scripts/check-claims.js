@@ -514,6 +514,56 @@ if (tennisMarketIssues === 0) {
   ok('Tennis default-market claims in active docs match Moneyline / Total Games / Set Handicap');
 }
 
+// --- 5g. Ratings source coverage claims -------------------------------------
+
+// The external-ratings layer's source list has exactly one home in code
+// (`lib/ssb-ratings-contract.js` SOURCES). The docs that describe it are prose
+// and a table, so adding a source can leave them naming a set that no longer
+// exists - which is what happened when `massey_games` landed: STATUS.md still
+// said "each of the four sources", BACKTESTING.md enumerated SOURCES without it,
+// and its per-source coverage table had no row for it. All four were fixed by
+// hand, which is the signal that the check belonged here instead.
+const { SOURCES: RATINGS_SOURCES } = (() => {
+  // The fixture repos these checks run against are minimal and need not carry the
+  // ratings layer. A module that cannot be loaded is reported, not thrown: the
+  // check degrades exactly like a missing doc does, so a sandbox without the
+  // contract still exercises every other claim here.
+  try {
+    return require(path.join(repoRoot, 'lib/ssb-ratings-contract.js'));
+  } catch {
+    return {};
+  }
+})();
+const ratingsDocRel = 'docs/BACKTESTING.md';
+const ratingsDocPath = path.join(repoRoot, ratingsDocRel);
+
+if (!Array.isArray(RATINGS_SOURCES)) {
+  warn('lib/ssb-ratings-contract.js not loadable — ratings source coverage claims not verified');
+} else if (!fs.existsSync(ratingsDocPath)) {
+  warn(`${ratingsDocRel} not present — ratings source coverage claims not verified`);
+} else {
+  const ratingsDoc = fs.readFileSync(ratingsDocPath, 'utf8');
+  const uncovered = [];
+  for (const source of RATINGS_SOURCES) {
+    // Word-boundary match, so `massey` is not satisfied by the `massey_games`
+    // that contains it - the whole point is to notice the source that is missing.
+    const named = new RegExp(`(?<![\\w])${source}(?![\\w])`).test(ratingsDoc);
+    // Case-insensitive: the coverage table names sources by display name
+    // (`Massey`), while the contract's ids are lowercase (`massey`).
+    const hasTableRow = new RegExp(`^\\|\\s*${source}\\s*\\|`, 'mi').test(ratingsDoc);
+    if (!named) uncovered.push(`${source} (not named)`);
+    else if (!hasTableRow) uncovered.push(`${source} (named, but no row in the per-source coverage table)`);
+  }
+  if (uncovered.length > 0) {
+    fail(
+      `${ratingsDocRel} does not cover every source in SOURCES: ${uncovered.join('; ')}. ` +
+        `Add it to the per-source coverage table and to the adapter list.`
+    );
+  } else {
+    ok(`ratings source coverage in ${ratingsDocRel} matches the contract (${RATINGS_SOURCES.length} sources)`);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Summary
 // ----------------------------------------------------------------------------
