@@ -740,6 +740,93 @@ describe('pp ratings --evaluate', () => {
     assert.equal(typeof withFile.result.scores.sagarin.scores.modelWinProbability.brier.value, 'number');
   });
 
+  it('takes the market closes a recorded scan wrote, with no --markets file', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    // A settled outcome AND a recorded de-vigged close for the same fixture: the
+    // two halves of the market gate, arriving from the two places they now live.
+    useLedger(t, {
+      version: 2,
+      scans: [],
+      candidates: [
+        {
+          candidateId: 'c1',
+          game: 'Pittsburgh vs Syracuse',
+          league: 'NCAAF',
+          market: 'Moneyline',
+          selection: 'Syracuse',
+          odds: -140,
+          marketFairProbability: 0.63
+        }
+      ],
+      bets: [settledMoneylineBet()],
+      settlements: []
+    });
+
+    const { result } = await runRatings(['ratings', '--evaluate', '--json']);
+
+    assert.equal(result.ledgerMarkets, 1, 'the recorded close reached the gate by itself');
+    assert.equal(result.fileMarkets, 0);
+    assert.notEqual(result.marketRelative.sampleSize, 0, 'the market gate has a close to work with');
+  });
+
+  it('will not hand an underdog price to the gate labelled as the favourite', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    useLedger(t, {
+      version: 2,
+      scans: [],
+      candidates: [
+        {
+          candidateId: 'c1',
+          game: 'Pittsburgh vs Syracuse',
+          league: 'NCAAF',
+          market: 'Moneyline',
+          selection: 'Pittsburgh',
+          odds: 120,
+          // Below 0.5: this is the dog's price, so the favourite was never recorded.
+          marketFairProbability: 0.37
+        }
+      ],
+      bets: [settledMoneylineBet()],
+      settlements: []
+    });
+
+    const { result } = await runRatings(['ratings', '--evaluate', '--json']);
+
+    assert.equal(result.ledgerMarkets, 0, 'an underdog price is not a favourite close');
+    assert.equal(result.marketRelative.sampleSize, 0);
+    assert.equal(result.marketSkipped[0].reason, 'favourite_not_recorded');
+  });
+
+  it('ignores a recorded candidate that is not a moneyline close', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    useLedger(t, {
+      version: 2,
+      scans: [],
+      candidates: [
+        {
+          candidateId: 'c1',
+          game: 'Pittsburgh vs Syracuse',
+          league: 'NCAAF',
+          market: 'Total Games',
+          selection: 'Over 21.5',
+          odds: -110,
+          marketFairProbability: 0.58
+        }
+      ],
+      bets: [settledMoneylineBet()],
+      settlements: []
+    });
+
+    const { result } = await runRatings(['ratings', '--evaluate', '--json']);
+
+    // The gate's inputs are market-WILDCARD, so a totals close would be compared
+    // against a win probability. It must never be picked up.
+    assert.equal(result.ledgerMarkets, 0);
+  });
+
   it('scores a RETAINED snapshot with --as-of, and never falls back to the current file', async (t) => {
     useRatingsDir(t);
     seedSagarinWithProbability();

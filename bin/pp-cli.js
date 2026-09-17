@@ -469,9 +469,10 @@ Flags:
                             the current one. Every refresh overwrites the current file,
                             so this is the only way a past week's predictions can still
                             be scored. Use the same date the resolver was run with.
-  --markets <file>          De-vigged closing lines for the market gate (JSON array, or
-                            {markets: [...]}). A scan records these per candidate;
-                            this flag supplies them explicitly for a run.
+  --markets <file>          Extra de-vigged closing lines for the market gate (JSON array,
+                            or {markets: [...]}). The gate already takes the closes that
+                            a --record-scan run wrote onto the ledger's MONEYLINE
+                            candidates, so this only ADDS to them.
   --min-sample <n>          Minimum sample before the market gate reports a number (default 30)
   -j, --json                Raw JSON output
 
@@ -2593,6 +2594,74 @@ function ratingsMarketsFromFile(file) {
 }
 
 /**
+ * De-vigged closes from the ledger's own recorded scan candidates.
+ *
+ * `--record-scan` writes `marketFairProbability` onto every candidate: the
+ * decision-time fair price for that side, de-vigged from the market's own
+ * two-sided book prices. That is exactly the close the market-relative gate
+ * compares a model against, and until now the gate could only see one if a file
+ * was handed to it.
+ *
+ * Two things about the shape are load-bearing:
+ *
+ *   - MONEYLINE ONLY, and emitted with NO market label. A win probability is a
+ *     moneyline concept, and the bridge serves a market-wildcard record (every
+ *     probability-carrying record is one) only from a market-less input. Leaving
+ *     the label off is what guarantees a win probability is never compared
+ *     against a totals close.
+ *   - ONE ROW PER FIXTURE, carrying the FAVOURITE's probability. The gate's
+ *     market band is the market_favourite_size band, so the input must be the
+ *     favourite's number. A scan may record one side or both, so the sides are
+ *     grouped and the highest fair probability wins; if nothing above 0.5 was
+ *     recorded, the favourite was never captured and the fixture is skipped
+ *     rather than emitting an underdog's price under a favourite's label.
+ *
+ * The candidate's `odds` is deliberately NOT passed. It is the price available
+ * when the scan ran, not a closing price, and feeding a decision price into a
+ * close-relative comparison would make the number mean something it does not.
+ *
+ * @returns {{ok: boolean, error?: string, markets: Array<Object>, skipped: Array<Object>}}
+ */
+function ratingsMarketsFromLedger() {
+  const loaded = loadLedger();
+  if (!loaded.ok) return { ok: false, error: loaded.error, markets: [], skipped: [] };
+  const candidates = (loaded.ledger && loaded.ledger.candidates) || [];
+  const skipped = [];
+
+  const byFixture = new Map();
+  for (const candidate of candidates) {
+    if (!candidate || candidate.market !== 'Moneyline') continue;
+    if (typeof candidate.game !== 'string' || candidate.game.trim() === '' || typeof candidate.league !== 'string') {
+      skipped.push({ game: candidate.game, reason: 'unusable_identity' });
+      continue;
+    }
+    const fair = Number(candidate.marketFairProbability);
+    if (!Number.isFinite(fair) || fair <= 0 || fair >= 1) {
+      // Absent on every candidate recorded before the de-vig producer landed.
+      skipped.push({ game: candidate.game, reason: 'no_fair_probability' });
+      continue;
+    }
+    const key = `${candidate.league}|${candidate.game}`;
+    const held = byFixture.get(key);
+    if (!held || fair > held.marketFairProbability) {
+      byFixture.set(key, { league: candidate.league, game: candidate.game, marketFairProbability: fair });
+    }
+  }
+
+  const markets = [];
+  for (const [key, row] of byFixture) {
+    if (row.marketFairProbability <= 0.5) {
+      skipped.push({ game: row.game, reason: 'favourite_not_recorded' });
+      continue;
+    }
+    markets.push(row);
+    byFixture.delete(key);
+  }
+
+  return { ok: true, markets, skipped };
+}
+
+/**
  * Optional settled outcomes from a file (`--outcomes <file>`), in the shape the
  * bridge already consumes: `[{ league, game, winner }]`.
  *
@@ -2668,17 +2737,22 @@ async function buildRatingsEvaluationReport(opts) {
   if (!fileOutcomeResult.ok) throw new Error('ratings: ' + fileOutcomeResult.error);
   const marketResult = ratingsMarketsFromFile(opts.marketsFile);
   if (!marketResult.ok) throw new Error('ratings: ' + marketResult.error);
+  const ledgerMarketResult = ratingsMarketsFromLedger();
+  if (!ledgerMarketResult.ok) throw new Error('ratings: ' + ledgerMarketResult.error);
 
   // A supplied file states the same thing the ledger does - who won - so the two
   // are concatenated rather than one overriding the other. The bridge refuses a
   // key it cannot resolve and reports the input it skipped, so an unusable or
   // duplicated entry costs a line in the skip count and nothing else.
   const outcomes = [...outcomeResult.outcomes, ...fileOutcomeResult.outcomes];
+  // Same for the closes: the ledger's own recorded de-vigged prices, plus any
+  // supplied explicitly for this run.
+  const markets = [...ledgerMarketResult.markets, ...marketResult.markets];
 
   const built = buildRatingEvaluationRows({
     records,
     outcomes,
-    markets: marketResult.markets
+    markets
   });
   const evaluation = evaluateRatingSources(built.rows);
   const marketRelative = evaluateMarketRelative(
@@ -2694,7 +2768,10 @@ async function buildRatingsEvaluationReport(opts) {
     ledgerOutcomes: outcomeResult.outcomes.length,
     fileOutcomes: fileOutcomeResult.outcomes.length,
     outcomeSkipped: outcomeResult.skipped,
-    markets: marketResult.markets.length,
+    markets: markets.length,
+    ledgerMarkets: ledgerMarketResult.markets.length,
+    fileMarkets: marketResult.markets.length,
+    marketSkipped: ledgerMarketResult.skipped,
     counts: built.counts,
     sources: built.sources,
     skipped: built.skipped,
