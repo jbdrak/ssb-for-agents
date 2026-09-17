@@ -341,6 +341,17 @@ Verified end to end against a real result: a retained snapshot whose fixture was
 Texas vs Ohio State (played 2026-09-12) resolved to a real winner from ESPN and
 scored in the gate, after a later refresh had overwritten the current file.
 
+**Cadence.** `scripts/ratings-weekly-evidence.sh` is the weekly turn of the loop:
+refresh (which is also what retains the week), score every retained week whose
+games have since been played, and print a compact report. It is built for
+`no_agent` cron at zero token cost, because the numbers are deterministic and no
+model needs to be involved. It is stateless: the same retained snapshots and the
+same ESPN results always produce the same numbers, so a missed week is picked up
+on the next run rather than leaving a cursor to corrupt. A week under 2 days old is
+skipped (its games may still be in progress), one over 35 days old is dropped
+(nothing new can settle), and a sample below 30 is labelled a small sample instead
+of being presented as if it settled something.
+
 The Sagarin-only helper `lib/sagarin-external-evaluation.js` is retained and now
 delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
 `segmentSagarinRows`, FBS/FCS segmentation) with its behavior unchanged. Keep
