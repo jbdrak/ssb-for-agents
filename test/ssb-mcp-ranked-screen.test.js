@@ -970,3 +970,75 @@ describe('buildDegradedDataWarnings — line field backfill (v2.1.3)', () => {
     );
   });
 });
+
+describe('buildRankedScreenResponse — card window diagnostics', () => {
+  // Fixed clock: `today` is resolved in the LOCAL timezone, so a test that uses
+  // the real Date.now() flips to "outside the window" whenever it runs near
+  // local midnight. Pin nowMs mid-day and derive every row start from it.
+  const NOW_MS = Date.parse('2026-09-16T20:00:00Z');
+  const IN_WINDOW = new Date(NOW_MS + 60 * 60 * 1000).toISOString();
+  const OUT_OF_WINDOW = '2030-01-01T19:05:00Z';
+
+  const windowRow = (start) => ({
+    gameId: 'game-window-1',
+    homeTeam: 'Celtics',
+    awayTeam: 'Lakers',
+    league: 'NBA',
+    market: 'Moneyline',
+    selection1: 'Celtics',
+    selection1Id: 'Moneyline:Celtics',
+    selection2: 'Lakers',
+    selection2Id: 'Moneyline:Lakers',
+    start,
+    odds: {
+      NoVigApp: { odds1: -110, odds2: 100 },
+      Pinnacle: { odds1: -112, odds2: 102 }
+    }
+  });
+
+  const buildWindowed = (rows, options = {}) =>
+    buildRankedScreenResponse({
+      client: { getOddsHistory: async () => [], queryOddsHistory: async () => ({}) },
+      payloads: [{ rows }],
+      args: { cardWindow: 'today', nowMs: NOW_MS, ...(options.args || {}) },
+      rankRows: (ranked) => ranked,
+      ...(options.startTimeNormalizer ? { startTimeNormalizer: options.startTimeNormalizer } : {})
+    });
+
+  it('reports rows that exist outside the card window instead of an empty slate', async () => {
+    // Regression: a `today` window used to report `no_ranked_rows_scanned` with
+    // scannedRowCount 0 while the whole next slate sat outside the window, which
+    // reads as "the feed has nothing" and hides every league.
+    const result = await buildWindowed([windowRow(OUT_OF_WINDOW)]);
+    assert.equal(result.result.length, 0);
+    assert.equal(result.resultMeta.emptyState.reason, 'outside_card_window');
+    assert.equal(result.resultMeta.emptyState.cardWindow, 'today');
+    assert.ok(result.resultMeta.cardWindowFilteredRowCount > 0);
+    assert.equal(result.resultMeta.emptyState.filteredRowCount, result.resultMeta.cardWindowFilteredRowCount);
+  });
+
+  it('leaves no window diagnostic when rows fall inside the window', async () => {
+    const result = await buildWindowed([windowRow(IN_WINDOW)]);
+    assert.ok(result.result.length > 0);
+    assert.equal(result.resultMeta.emptyState, undefined);
+    assert.equal(result.resultMeta.cardWindowFilteredRowCount, undefined);
+  });
+
+  it('runs startTimeNormalizer before the window filter', async () => {
+    // Tennis: the raw gameId timestamp is stale, so the window must judge the
+    // corrected start or it filters the wrong day.
+    let calls = 0;
+    const result = await buildWindowed([windowRow(OUT_OF_WINDOW)], {
+      startTimeNormalizer: async (rows) => {
+        calls += 1;
+        for (const row of rows) {
+          row.start = IN_WINDOW;
+        }
+        return rows;
+      }
+    });
+    assert.equal(calls, 1);
+    assert.ok(result.result.length > 0, 'row normalized into the window should survive the filter');
+    assert.equal(result.resultMeta.emptyState, undefined);
+  });
+});
