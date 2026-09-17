@@ -314,6 +314,19 @@ the snapshot's `asOf`. A snapshot of the CURRENT week predicts games that have n
 been played yet, so `matched=0` is often the correct answer. That is a data truth,
 not a bug.
 
+**The denominator is fixtures, not records.** A source's payload is not all games:
+Sagarin carries its team RATINGS table beside its game predictions (a rating row
+reads `teamA === teamB`) and Massey's carries only ratings. Counting records as
+fixtures made Massey look like 138 fixtures when it has 0 games, and produced a
+permanent "identity unresolved" that was never a failure. A same-side row is now
+`not_a_fixture`, counted apart from `unmatched`, and reported next to the fixture
+count. Live per week: sagarin 119 fixtures + 266 rating rows, massey 0 + 138,
+sasser 57. So Massey contributes ratings but can never produce settled evidence —
+worth knowing before reading a zero from it as a bad week. A real fixture whose
+side cannot be canonicalized still fails closed (`record_identity_unresolved`);
+on the live Sagarin snapshot that is one case, McNeese State vs UTRGV, an FCS
+program the alias registry does not carry.
+
 **Retention: the loop turns on it.**
 `<SSB_RATINGS_DIR>/<source>-<league>-<season>.json` has no date in its name, so
 every refresh overwrites it - and a prediction cannot be scored until AFTER its
