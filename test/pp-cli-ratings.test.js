@@ -333,10 +333,22 @@ describe('pp ratings: -j / --json', () => {
 describe('pp ratings: --show', () => {
   it('prints per-snapshot detail without mutating the state dir', async (t) => {
     const dir = seedAll(t);
-    const before = fs.readdirSync(dir).sort();
-    const bytesBefore = Object.fromEntries(
-      before.map((entry) => [entry, fs.readFileSync(path.join(dir, entry), 'utf8')])
-    );
+    // Compare every FILE in the state dir, retained copies included, so the
+    // assertion covers the whole store and not just its top level.
+    const stateOf = () => {
+      const state = {};
+      const walk = (base, prefix = '') => {
+        for (const entry of fs.readdirSync(base).sort()) {
+          const full = path.join(base, entry);
+          if (fs.statSync(full).isDirectory()) walk(full, `${prefix}${entry}/`);
+          else state[`${prefix}${entry}`] = fs.readFileSync(full, 'utf8');
+        }
+      };
+      walk(dir);
+      return state;
+    };
+
+    const before = stateOf();
 
     const { result, logs } = await runRatings(['ratings', '--show', '--league', 'CFB']);
     const out = logs.join('\n');
@@ -353,11 +365,7 @@ describe('pp ratings: --show', () => {
     // Detail mode does NOT emit the one-line summary format.
     assert.doesNotMatch(out, /records=\d/);
 
-    const after = fs.readdirSync(dir).sort();
-    assert.deepEqual(after, before, 'no files added or removed');
-    for (const entry of after) {
-      assert.equal(fs.readFileSync(path.join(dir, entry), 'utf8'), bytesBefore[entry], `${entry} is unchanged`);
-    }
+    assert.deepEqual(stateOf(), before, 'no file was added, removed or changed');
   });
 
   it('--show on an empty listing prints the empty state, not a blank screen', async (t) => {
@@ -730,6 +738,29 @@ describe('pp ratings --evaluate', () => {
     assert.equal(coverage.sampleSize, 1);
     // The point of an outcome is that a probability can finally be scored.
     assert.equal(typeof withFile.result.scores.sagarin.scores.modelWinProbability.brier.value, 'number');
+  });
+
+  it('scores a RETAINED snapshot with --as-of, and never falls back to the current file', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    useLedger(t, ledgerWith([]));
+
+    const current = await runRatings(['ratings', '--evaluate', '--json']);
+    assert.equal(current.result.asOf, null, 'no --as-of means the current snapshot');
+    assert.equal(current.result.records, 1);
+
+    // Every refresh now retains a dated copy, which is the only reason a past
+    // week's predictions still exist to be scored.
+    const retained = await runRatings(['ratings', '--evaluate', '--json', '--as-of', AS_OF]);
+    assert.equal(retained.result.asOf, AS_OF);
+    assert.equal(retained.result.records, 1, 'the retained copy is what --as-of reads');
+
+    // Decisive: a date with no retained copy must NOT quietly fall back to the
+    // current file. Falling back would score this week's predictions as if they
+    // were that week's, which is the exact error retention exists to prevent.
+    const absent = await runRatings(['ratings', '--evaluate', '--json', '--as-of', '2026-01-01']);
+    assert.equal(absent.result.records, 0);
+    assert.equal(absent.result.asOf, '2026-01-01');
   });
 
   it('renders the human path without throwing', async (t) => {

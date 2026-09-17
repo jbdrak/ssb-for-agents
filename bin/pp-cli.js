@@ -28,7 +28,9 @@ const { verifyVenueOrder } = require(PROJECT + '/lib/ssb-venue-order');
 const { resolveScanLimit } = require(PROJECT + '/lib/ssb-scan-limit');
 const { correctTennisTimes } = require(PROJECT + '/lib/ssb-tennis');
 const { extractEventLinkRows, groupEventLinks } = require(PROJECT + '/lib/ssb-event-links');
-const { listSnapshots, loadSnapshot } = require(PROJECT + '/lib/ssb-ratings-snapshot');
+const { listSnapshots, loadSnapshot, loadSnapshotAt, listSnapshotHistory, historyStamp } = require(
+  PROJECT + '/lib/ssb-ratings-snapshot'
+);
 const { applyRatingsOverlay } = require(PROJECT + '/lib/ssb-ratings-overlay');
 const { buildRatingEvaluationRows } = require(PROJECT + '/lib/ssb-ratings-evaluation-bridge');
 const { evaluateRatingSources, evaluateMarketRelative } = require(PROJECT + '/lib/ssb-external-ratings-evaluation');
@@ -449,6 +451,9 @@ Flags:
   --league <a,b>            Filter by league (CFB/CBB aliases map to NCAAF/NCAAB)
   --season <a,b>            Filter by season
   --show                    Print per-snapshot detail (method, asOf, fetchedAt, records, path)
+  --history                 List the RETAINED snapshots (the dated copies each refresh keeps).
+                            These are what --evaluate --as-of and
+                            scripts/resolve-ratings-outcomes.js read.
   --evaluate                Score each source independently against settled moneyline
                             outcomes (Brier / log loss / calibration), then run the
                             market-relative gate. Sample and coverage are reported
@@ -460,6 +465,10 @@ Flags:
                             how a source's own fixtures get scored without a bet having
                             been placed on them; scripts/resolve-ratings-outcomes.js
                             writes one.
+  --as-of <date>            Score a RETAINED snapshot (YYYY-MM-DD of its asOf) instead of
+                            the current one. Every refresh overwrites the current file,
+                            so this is the only way a past week's predictions can still
+                            be scored. Use the same date the resolver was run with.
   --markets <file>          De-vigged closing lines for the market gate (JSON array, or
                             {markets: [...]}). A scan records these per candidate;
                             this flag supplies them explicitly for a run.
@@ -2618,14 +2627,27 @@ function ratingsOutcomesFromFile(file) {
  * Read-only and network-free: it reads the snapshot store and the tracker
  * ledger and never fetches, so it is safe to run anywhere.
  *
- * @param {{sources: string[], leagues: string[], seasons: number[], outcomesFile?: unknown, marketsFile?: unknown, minSample?: number}} opts
+ * @param {{sources: string[], leagues: string[], seasons: number[], outcomesFile?: unknown, marketsFile?: unknown, asOf?: unknown, minSample?: number}} opts
  * @returns {Promise<Object>}
  */
 async function buildRatingsEvaluationReport(opts) {
-  const listed = listSnapshots();
-  if (!listed.ok) throw new Error('ratings: ' + (listed.errors || []).join('; '));
+  // `--as-of` scores a RETAINED snapshot instead of the current one. That is the
+  // only way a past week's predictions can be scored at all: the latest file was
+  // overwritten by a later refresh, so the dated copy is all that still exists.
+  const asOfInput = typeof opts.asOf === 'string' ? opts.asOf.trim() : '';
+  const asOfStamp = asOfInput === '' ? null : historyStamp(asOfInput);
+  if (asOfInput !== '' && !asOfStamp) throw new Error(`ratings: invalid as-of date: ${asOfInput}`);
 
-  let snapshots = listed.snapshots;
+  let snapshots;
+  if (asOfStamp) {
+    const listedHistory = listSnapshotHistory();
+    if (!listedHistory.ok) throw new Error('ratings: ' + (listedHistory.errors || []).join('; '));
+    snapshots = listedHistory.snapshots.filter((snapshot) => snapshot.stamp === asOfStamp);
+  } else {
+    const listed = listSnapshots();
+    if (!listed.ok) throw new Error('ratings: ' + (listed.errors || []).join('; '));
+    snapshots = listed.snapshots;
+  }
   if (opts.sources.length) snapshots = snapshots.filter((s) => opts.sources.includes(s.source));
   if (opts.leagues.length) snapshots = snapshots.filter((s) => opts.leagues.includes(s.league));
   if (opts.seasons.length) snapshots = snapshots.filter((s) => opts.seasons.includes(s.season));
@@ -2633,7 +2655,9 @@ async function buildRatingsEvaluationReport(opts) {
   const records = [];
   for (const snapshot of snapshots) {
     if (!snapshot.valid) continue;
-    const loaded = loadSnapshot(snapshot.source, snapshot.league, snapshot.season);
+    const loaded = asOfStamp
+      ? loadSnapshotAt(snapshot.source, snapshot.league, snapshot.season, asOfStamp)
+      : loadSnapshot(snapshot.source, snapshot.league, snapshot.season);
     if (!loaded.ok || !loaded.snapshot) continue;
     for (const record of loaded.snapshot.records) records.push(record);
   }
@@ -2663,6 +2687,7 @@ async function buildRatingsEvaluationReport(opts) {
   );
 
   return {
+    asOf: asOfStamp || null,
     snapshotCount: snapshots.length,
     records: records.length,
     outcomes: outcomes.length,
@@ -2764,11 +2789,48 @@ async function cmdRatings(positional, flags = {}) {
       seasons,
       outcomesFile: flags.outcomes,
       marketsFile: flags.markets,
+      asOf: flags['as-of'],
       minSample
     });
     if (jsonOut) console.log(JSON.stringify(report, null, 2));
     else formatRatingsEvaluation(report);
     return { ok: true, ...report };
+  }
+
+  // The retained copies, which are what `--evaluate --as-of` and the outcome
+  // resolver read. Listed separately from `--show` because a retained snapshot is
+  // by definition not the current one, and conflating the two is how a past week
+  // gets mistaken for this week.
+  if (flags.history === true) {
+    const listedHistory = listSnapshotHistory();
+    if (!listedHistory.ok) throw new Error('ratings: ' + (listedHistory.errors || []).join('; '));
+    let retained = listedHistory.snapshots;
+    if (sources.length) retained = retained.filter((snapshot) => sources.includes(snapshot.source));
+    if (leagues.length) retained = retained.filter((snapshot) => leagues.includes(snapshot.league));
+    if (seasons.length) retained = retained.filter((snapshot) => seasons.includes(snapshot.season));
+
+    if (jsonOut) {
+      console.log(JSON.stringify({ retained }, null, 2));
+      return { ok: true, retained };
+    }
+    if (retained.length === 0) {
+      console.log('No retained snapshots yet. Retention begins with the next `node scripts/refresh-ratings.js` run.');
+      return { ok: true, retained: [] };
+    }
+    for (const snapshot of retained) {
+      if (!snapshot.valid) {
+        console.log(
+          `${snapshot.source} ${snapshot.league} ${snapshot.season} ${snapshot.stamp} invalid` +
+            ` (${(snapshot.errors || []).join('; ')})`
+        );
+        continue;
+      }
+      console.log(
+        `${snapshot.source} ${snapshot.league} ${snapshot.season} asOf=${snapshot.asOf}` +
+          ` records=${snapshot.recordCount} fetchedAt=${snapshot.fetchedAt || '-'}`
+      );
+    }
+    return { ok: true, retained };
   }
 
   const listed = listSnapshots();

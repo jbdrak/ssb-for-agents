@@ -102,8 +102,13 @@ describe('ssb-ratings-snapshot store', () => {
     const saved = store.saveSnapshot(sampleSnapshot());
     assert.equal(saved.ok, true, JSON.stringify(saved.errors));
     // The write goes to a temp file and is renamed onto the target, so the
-    // directory holds the snapshot and nothing else.
-    assert.deepEqual(fs.readdirSync(tmpDir), ['sagarin-NCAAF-2026.json']);
+    // directory holds the snapshot plus the retained copy, and no temp file.
+    assert.deepEqual(fs.readdirSync(tmpDir).sort(), ['history', 'sagarin-NCAAF-2026.json']);
+    assert.equal(
+      fs.readdirSync(tmpDir).some((entry) => entry.includes('.tmp-')),
+      false,
+      'no temp file is left behind'
+    );
   });
 
   // Atomicity: a reader must never observe a partial file at the final path.
@@ -119,8 +124,16 @@ describe('ssb-ratings-snapshot store', () => {
     assert.equal(result.ok, false);
     assert.match(result.errors.join('; '), /unable to write snapshot/);
 
-    // No stray temp file, and nothing readable was left at the final path.
-    assert.deepEqual(fs.readdirSync(tmpDir), ['sagarin-NCAAF-2026.json']);
+    // No stray temp file, and nothing readable was left at the final path. The
+    // retained COPY does survive: it is written before the target, so a failure
+    // to update the latest file can never be the reason a past week becomes
+    // unscoreable.
+    assert.deepEqual(fs.readdirSync(tmpDir).sort(), ['history', 'sagarin-NCAAF-2026.json']);
+    assert.equal(
+      fs.readdirSync(tmpDir).some((entry) => entry.includes('.tmp-')),
+      false,
+      'no temp file is left behind'
+    );
     assert.equal(fs.statSync(target).isDirectory(), true, 'the target was not replaced by a partial file');
     const loaded = store.loadSnapshot('sagarin', 'NCAAF', 2026);
     assert.equal(loaded.ok, false);
@@ -238,5 +251,71 @@ describe('ssb-ratings-snapshot store', () => {
     // Assert the resolved path only; the ok:false missing-snapshot contract is
     // covered hermetically by 'returns ok:false when the snapshot does not exist'.
     assert.equal(loaded.path, expected);
+  });
+});
+
+// Retention: the latest file is overwritten by every refresh, so without a dated
+// copy the predictions a later settled result would be scored against are gone
+// before the games are played. These assert the copy exists, that it is loadable
+// by its own `asOf`, and that retention changed nothing about what `listSnapshots`
+// reports as current.
+describe('ssb-ratings-snapshot retention', () => {
+  it('retains a dated copy per asOf while the latest file holds only the newest', () => {
+    const first = store.saveSnapshot(sampleSnapshot({ asOf: '2026-09-06T00:00:00.000Z' }));
+    const second = store.saveSnapshot(sampleSnapshot({ asOf: '2026-09-13T00:00:00.000Z' }));
+    assert.equal(first.ok, true, JSON.stringify(first.errors));
+    assert.equal(second.ok, true, JSON.stringify(second.errors));
+
+    assert.deepEqual(fs.readdirSync(path.join(tmpDir, 'history')).sort(), [
+      'sagarin-NCAAF-2026-2026-09-06.json',
+      'sagarin-NCAAF-2026-2026-09-13.json'
+    ]);
+
+    // The current view is unchanged: exactly one snapshot, the newest.
+    const listed = store.listSnapshots();
+    assert.equal(listed.snapshots.length, 1);
+    assert.equal(listed.snapshots[0].asOf, '2026-09-13T00:00:00.000Z');
+  });
+
+  it('loads a retained snapshot by its asOf, including a timestamp whose date part is used', () => {
+    store.saveSnapshot(sampleSnapshot({ asOf: '2026-09-06T00:00:00.000Z' }));
+    store.saveSnapshot(sampleSnapshot({ asOf: '2026-09-13T00:00:00.000Z' }));
+
+    assert.equal(
+      store.loadSnapshotAt('sagarin', 'NCAAF', 2026, '2026-09-06').snapshot.asOf,
+      '2026-09-06T00:00:00.000Z'
+    );
+    assert.equal(
+      store.loadSnapshotAt('sagarin', 'NCAAF', 2026, '2026-09-13T00:00:00.000Z').snapshot.asOf,
+      '2026-09-13T00:00:00.000Z'
+    );
+
+    // The retained copies are what a past week is scored from, so the listing
+    // that finds them is asserted too: newest first.
+    const history = store.listSnapshotHistory();
+    assert.equal(history.ok, true);
+    assert.deepEqual(
+      history.snapshots.map((entry) => entry.stamp),
+      ['2026-09-13', '2026-09-06']
+    );
+  });
+
+  it('refuses an asOf that is not a plain date rather than filing it under a guessed one', () => {
+    store.saveSnapshot(sampleSnapshot({ asOf: '2026-09-06T00:00:00.000Z' }));
+    const refused = store.loadSnapshotAt('sagarin', 'NCAAF', 2026, 'not-a-date');
+    assert.equal(refused.ok, false);
+    assert.match(refused.errors.join('; '), /invalid asOf date/);
+  });
+
+  it('re-saving the same asOf overwrites its own copy instead of duplicating it', () => {
+    store.saveSnapshot(sampleSnapshot({ asOf: '2026-09-06T00:00:00.000Z' }));
+    store.saveSnapshot(sampleSnapshot({ asOf: '2026-09-06T00:00:00.000Z' }));
+    assert.equal(fs.readdirSync(path.join(tmpDir, 'history')).length, 1);
+  });
+
+  it('reports no history at all before anything has been retained', () => {
+    const history = store.listSnapshotHistory();
+    assert.equal(history.ok, true);
+    assert.deepEqual(history.snapshots, []);
   });
 });

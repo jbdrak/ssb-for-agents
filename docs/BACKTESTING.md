@@ -314,13 +314,32 @@ the snapshot's `asOf`. A snapshot of the CURRENT week predicts games that have n
 been played yet, so `matched=0` is often the correct answer. That is a data truth,
 not a bug.
 
-**Known gap: snapshots are not retained.**
+**Retention: the loop turns on it.**
 `<SSB_RATINGS_DIR>/<source>-<league>-<season>.json` has no date in its name, so
-every refresh overwrites the previous snapshot. The predictions a settled result
-would be scored against are therefore destroyed before the games are played, and
-the evidence loop cannot close for any source until snapshots are kept per `asOf`.
-Until then `--evaluate` scores whatever the current snapshot can be joined to
-(usually nothing); the numbers it can report come from supplied outcomes.
+every refresh overwrites it - and a prediction cannot be scored until AFTER its
+game is played. Without a second copy, the predictions a settled result would be
+scored against are destroyed before that result exists, so no source could ever be
+scored from live data. `saveSnapshot` therefore also writes a dated copy to
+`history/<source>-<league>-<season>-<asOf>.json`, and those copies are what both
+halves of the loop read:
+
+```
+node scripts/resolve-ratings-outcomes.js --source sagarin --league NCAAF --as-of 2026-09-05
+pp ratings --evaluate --source sagarin --as-of 2026-09-05 --outcomes <the file above>
+pp ratings --history        # which weeks are retained
+```
+
+On either side, `--as-of` means the RETAINED copy and never the current file: a
+date with no retained copy reads as zero records rather than quietly falling back,
+so this week's predictions can never be scored as if they were that week's. The
+retention write happens BEFORE the latest file is updated, so a failed refresh
+reports itself as unsaved instead of updating the current file while dropping the
+copy that makes the week scoreable later. `listSnapshots` is unchanged and still
+answers only "what is current"; retained copies never appear in it.
+
+Verified end to end against a real result: a retained snapshot whose fixture was
+Texas vs Ohio State (played 2026-09-12) resolved to a real winner from ESPN and
+scored in the gate, after a later refresh had overwritten the current file.
 
 The Sagarin-only helper `lib/sagarin-external-evaluation.js` is retained and now
 delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
