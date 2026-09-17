@@ -20,6 +20,13 @@
  *   node scripts/resolve-ratings-outcomes.js --source sagarin --league NCAAF
  *   node scripts/resolve-ratings-outcomes.js --source sagarin --league NCAAF \
  *     --from 2026-09-13 --to 2026-09-19 --out /tmp/outcomes.json
+ *   node scripts/resolve-ratings-outcomes.js --source sagarin --league NCAAF --as-of 2026-09-12
+ *
+ * `--as-of` resolves a RETAINED snapshot (the dated copy `saveSnapshot` keeps)
+ * instead of the current one. That is the mode that closes the loop: the current
+ * file has been overwritten by a later refresh, so the retained copy is the only
+ * record of what the source predicted before that week's games. Pair it with
+ * `pp ratings --evaluate --as-of <same date> --outcomes <file>`.
  *
  * @module scripts/resolve-ratings-outcomes
  */
@@ -28,7 +35,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { listSnapshots, loadSnapshot } = require('../lib/ssb-ratings-snapshot');
+const {
+  listSnapshots,
+  loadSnapshot,
+  loadSnapshotAt,
+  listSnapshotHistory,
+  historyStamp
+} = require('../lib/ssb-ratings-snapshot');
 const { buildCfbOutcomeIndex, matchCfbOutcomes } = require('../lib/cfb-outcomes');
 
 const ESPN_CFB_SCOREBOARD = 'https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard';
@@ -71,8 +84,49 @@ function parseArgs(argv) {
   return flags;
 }
 
-/** The snapshot records for one source+league, or an error describing why not. */
-function loadRecords(source, league) {
+/**
+ * The snapshot records for one source+league, or an error describing why not.
+ *
+ * With `asOf`, it reads the RETAINED copy captured at that date rather than the
+ * current one. That is the case that matters: the current file has been
+ * overwritten by a later refresh, so the retained copy is the only surviving
+ * record of what the source predicted before that week's games.
+ *
+ * @param {string} source
+ * @param {string} league
+ * @param {string} [at] - `YYYY-MM-DD` of a retained snapshot's `asOf`
+ */
+function loadRecords(source, league, at) {
+  const stamp = at ? historyStamp(at) : null;
+  if (at && !stamp) return { ok: false, error: `invalid --as-of date: ${at}` };
+
+  if (stamp) {
+    const listedHistory = listSnapshotHistory();
+    if (!listedHistory.ok) return { ok: false, error: (listedHistory.errors || []).join('; ') };
+    const retained = listedHistory.snapshots.find(
+      (snapshot) =>
+        snapshot.valid && snapshot.source === source && snapshot.league === league && snapshot.stamp === stamp
+    );
+    if (!retained) {
+      return {
+        ok: false,
+        error: `no retained ${source}/${league} snapshot for asOf ${stamp} (see: pp ratings --history)`
+      };
+    }
+    const loadedRetained = loadSnapshotAt(source, league, retained.season, stamp);
+    if (!loadedRetained.ok || !loadedRetained.snapshot) {
+      return { ok: false, error: `unable to load retained ${source}/${league} ${stamp}` };
+    }
+    const retainedSnapshot = loadedRetained.snapshot;
+    return {
+      ok: true,
+      records: retainedSnapshot.records,
+      asOf: retainedSnapshot.asOf,
+      season: retainedSnapshot.season,
+      retained: true
+    };
+  }
+
   const listed = listSnapshots();
   if (!listed.ok) return { ok: false, error: (listed.errors || []).join('; ') };
   const match = listed.snapshots.find(
@@ -81,7 +135,13 @@ function loadRecords(source, league) {
   if (!match) return { ok: false, error: `no valid ${source}/${league} snapshot in the ratings store` };
   const loaded = loadSnapshot(source, league, match.season);
   if (!loaded.ok || !loaded.snapshot) return { ok: false, error: `unable to load ${source}/${league}` };
-  return { ok: true, records: loaded.snapshot.records, asOf: loaded.snapshot.asOf, season: loaded.snapshot.season };
+  return {
+    ok: true,
+    records: loaded.snapshot.records,
+    asOf: loaded.snapshot.asOf,
+    season: loaded.snapshot.season,
+    retained: false
+  };
 }
 
 async function fetchScoreboard(date, fetchImpl = globalThis.fetch) {
@@ -102,14 +162,18 @@ async function main() {
     process.exit(1);
   }
 
-  const loaded = loadRecords(source, league);
+  const loaded = loadRecords(source, league, typeof flags['as-of'] === 'string' ? flags['as-of'] : undefined);
   if (!loaded.ok) {
     console.error(`resolve-ratings-outcomes: ${loaded.error}`);
     process.exit(1);
   }
 
-  const from = String(flags.from || addDays(loaded.asOf, 1) || '');
-  const to = String(flags.to || addDays(loaded.asOf, 10) || '');
+  // A snapshot's `asOf` may be a full timestamp while the ESPN window needs a
+  // plain date, so take its date part. Without this the default window silently
+  // came out empty and the resolver refused to run.
+  const asOfDate = historyStamp(loaded.asOf) || String(loaded.asOf);
+  const from = String(flags.from || addDays(asOfDate, 1) || '');
+  const to = String(flags.to || addDays(asOfDate, 10) || '');
   const days = dateRange(from, to);
   if (!days) {
     console.error(`resolve-ratings-outcomes: invalid window ${from}..${to} (need YYYY-MM-DD, from <= to)`);
@@ -145,6 +209,7 @@ async function main() {
     season: loaded.season,
     ratingsSource: source,
     ratingsAsOf: loaded.asOf,
+    ratingsRetained: loaded.retained === true,
     window: { from, to, days: days.length },
     fetchedAt: new Date().toISOString(),
     counts: {
@@ -164,7 +229,8 @@ async function main() {
 
   // Nothing here is a secret: counts and reasons only.
   console.log(
-    `${source}/${league} ratingsAsOf=${loaded.asOf} window=${from}..${to} days=${days.length}` +
+    `${source}/${league} ratingsAsOf=${loaded.asOf}${loaded.retained ? ' (retained)' : ''}` +
+      ` window=${from}..${to} days=${days.length}` +
       (failedDates.length ? ` failedDates=${failedDates.length}` : '')
   );
   console.log(

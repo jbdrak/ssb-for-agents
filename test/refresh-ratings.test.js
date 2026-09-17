@@ -393,7 +393,9 @@ describe('refresh-ratings: a seasonal (undated) page is not an adapter error', (
     assert.equal(row.coverage, 'full');
     assert.equal(row.recordCount, 138);
     assert.equal(row.asOf, '2026-09-13');
-    assert.deepEqual(fs.readdirSync(dir), ['massey-NCAAF-2026.json']);
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['history', 'massey-NCAAF-2026.json']);
+    // And the dated copy retention keeps, which is what a later week is scored from.
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'history')), ['massey-NCAAF-2026-2026-09-13.json']);
   });
 
   it('never reports full coverage beside zero records, whatever the status', async (t) => {
