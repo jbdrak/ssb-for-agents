@@ -36,6 +36,7 @@
 const store = require('../lib/ssb-ratings-snapshot');
 const massey = require('../lib/ratings-sources/massey');
 const masseyWeb = require('../lib/ratings-sources/massey-web');
+const masseyGames = require('../lib/ratings-sources/massey-games');
 const sagarin = require('../lib/ratings-sources/sagarin');
 const sasser = require('../lib/ratings-sources/sasser');
 // The layer's one recency rule and age arithmetic. The refresh summary asks a
@@ -53,6 +54,15 @@ const ADAPTERS = Object.freeze({
     supportedLeagues: massey.supportedLeagues,
     // Massey's ratings host 403s plain HTTP, so it needs the got-scraping
     // client rather than the ambient fetch. Other sources keep the default.
+    createFetch: masseyWeb.createMasseyFetch
+  },
+  massey_games: {
+    source: masseyGames.SOURCE,
+    fetch: masseyGames.fetchMasseyGames,
+    normalize: masseyGames.normalizeMasseyGames,
+    unsupportedReason: masseyGames.unsupportedReason,
+    supportedLeagues: masseyGames.supportedLeagues,
+    // Same vendor and same bot wall as `massey`, so the same client.
     createFetch: masseyWeb.createMasseyFetch
   },
   sagarin: {
