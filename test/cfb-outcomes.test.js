@@ -117,3 +117,47 @@ describe('cfb-outcomes: match', () => {
     assert.deepEqual(matchCfbOutcomes([record('Pittsburgh', 'Syracuse')], buildCfbOutcomeIndex([])).outcomes, []);
   });
 });
+
+// Sagarin's payload carries its team RATINGS table as records beside its game
+// predictions, and a rating row reads `teamA === teamB`. That is not a fixture:
+// treating it as one both inflates the denominator and reports a permanent
+// "identity unresolved" failure that is not a failure.
+describe('cfb-outcomes: fixtures vs rating rows', () => {
+  const index = buildCfbOutcomeIndex([event('A at B', 'Pittsburgh', 'Syracuse')]);
+
+  it('counts a same-side row as a non-fixture, not as an unsettled fixture', () => {
+    const result = matchCfbOutcomes([record('Pittsburgh', 'Pittsburgh')], index);
+    assert.equal(result.notFixtures, 1);
+    assert.equal(result.unmatched, 0, 'nothing failed to settle');
+    assert.equal(result.fixtures, 0);
+    assert.equal(result.reasons.not_a_fixture, 1);
+    assert.equal(result.reasons.no_settled_result, undefined);
+  });
+
+  it('recognises a same-side row even when the team does not canonicalize', () => {
+    // UTRGV is an FCS program the alias registry does not carry. As a rating row
+    // it is still its own non-fixture, not a fixture with an unresolved name.
+    const result = matchCfbOutcomes([record('UTRGV', 'UTRGV')], index);
+    assert.equal(result.notFixtures, 1);
+    assert.equal(result.reasons.record_identity_unresolved, undefined);
+  });
+
+  it('still reports an unresolved NAME when the two sides differ', () => {
+    // A real fixture whose side cannot be resolved must keep failing closed.
+    const result = matchCfbOutcomes([record('UTRGV', 'Pittsburgh')], index);
+    assert.equal(result.notFixtures, 0);
+    assert.equal(result.reasons.record_identity_unresolved, 1);
+    assert.equal(result.unmatched, 1);
+  });
+
+  it('reports the denominator as real fixtures only', () => {
+    const result = matchCfbOutcomes(
+      [record('Pittsburgh', 'Syracuse'), record('Ohio State', 'Ohio State'), record('Texas', 'Ohio State')],
+      index
+    );
+    assert.equal(result.matched, 1);
+    assert.equal(result.unmatched, 1);
+    assert.equal(result.fixtures, 2, 'the rating row is not part of the denominator');
+    assert.equal(result.notFixtures, 1);
+  });
+});

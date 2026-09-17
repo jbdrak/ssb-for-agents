@@ -213,7 +213,9 @@ async function main() {
     window: { from, to, days: days.length },
     fetchedAt: new Date().toISOString(),
     counts: {
-      fixtures: loaded.records.length,
+      records: loaded.records.length,
+      fixtures: result.fixtures,
+      notFixtures: result.notFixtures,
       events: events.length,
       matched: result.matched,
       unmatched: result.unmatched
@@ -234,7 +236,8 @@ async function main() {
       (failedDates.length ? ` failedDates=${failedDates.length}` : '')
   );
   console.log(
-    `  fixtures=${loaded.records.length} events=${events.length} matched=${result.matched} unmatched=${result.unmatched}`
+    `  fixtures=${result.fixtures} events=${events.length} matched=${result.matched} unmatched=${result.unmatched}` +
+      (result.notFixtures ? ` (+${result.notFixtures} non-fixture row(s))` : '')
   );
   for (const [reason, count] of Object.entries(result.reasons).sort((a, b) => b[1] - a[1])) {
     console.log(`  ${String(count).padStart(4)}  ${reason}`);

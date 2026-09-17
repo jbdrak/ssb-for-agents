@@ -117,7 +117,14 @@ function scoreWeek(snapshot, index) {
 
   const result = matchCfbOutcomes(loaded.snapshot.records, index);
   if (result.matched === 0) {
-    return { stamp, fixtures: loaded.snapshot.records.length, matched: 0, pending: true, reasons: result.reasons };
+    return {
+      stamp,
+      fixtures: result.fixtures,
+      notFixtures: result.notFixtures,
+      matched: 0,
+      pending: true,
+      reasons: result.reasons
+    };
   }
 
   const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ratings-week-')), 'outcomes.json');
@@ -145,7 +152,8 @@ function scoreWeek(snapshot, index) {
     const scored = report.scores[snapshot.source] || null;
     return {
       stamp,
-      fixtures: loaded.snapshot.records.length,
+      fixtures: result.fixtures,
+      notFixtures: result.notFixtures,
       matched: result.matched,
       coverage: scored ? scored.coverage : null,
       scores: scored ? scored.scores : null,
@@ -222,8 +230,9 @@ async function main() {
     for (const row of scored) {
       const sample = row.coverage ? row.coverage.sampleSize : 0;
       const small = sample > 0 && sample < MIN_SAMPLE ? ' (small sample)' : '';
+      const extra = row.notFixtures ? ` (+${row.notFixtures} ratings rows, not fixtures)` : '';
       out.push(
-        `  ${row.source} asOf=${row.stamp} fixtures=${row.fixtures} settled=${row.matched} sample=${sample}${small}`
+        `  ${row.source} asOf=${row.stamp} fixtures=${row.fixtures}${extra} settled=${row.matched} sample=${sample}${small}`
       );
       if (row.scores && row.scores.modelWinProbability) {
         const m = row.scores.modelWinProbability;
@@ -242,10 +251,13 @@ async function main() {
     out.push('', 'awaiting results');
     for (const row of pending) {
       const reasons = Object.entries(row.reasons || {})
+        // Reported as its own count, so it does not clutter the reason list.
+        .filter(([reason]) => reason !== 'not_a_fixture')
         .sort((a, b) => b[1] - a[1])
         .map(([reason, count]) => `${reason}=${count}`)
         .join(' ');
-      out.push(`  ${row.source} asOf=${row.stamp} fixtures=${row.fixtures} ${reasons}`);
+      const extra = row.notFixtures ? ` (+${row.notFixtures} ratings rows, not fixtures)` : '';
+      out.push(`  ${row.source} asOf=${row.stamp} fixtures=${row.fixtures}${extra} ${reasons}`);
     }
   }
 
