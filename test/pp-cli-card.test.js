@@ -18,6 +18,10 @@ function betRow(overrides = {}) {
     start: '2026-09-05T23:00:00.000Z',
     startCT: 'Sat 6:00 PM CT',
     startsIn: 'in 3h',
+    // A price that clears the gate's EV floor: 57% fair at -110 is +9.4% EV.
+    // Fixtures without this are dropped as `no_price_reference`, which is the
+    // gate working, so every card fixture that expects to print carries one.
+    marketFairProbability: 0.57,
     ...overrides
   };
 }
@@ -86,5 +90,75 @@ describe('pp card', () => {
     assert.ok(Array.isArray(parsed.card));
     assert.ok(parsed.card.length >= 1);
     assert.equal(parsed.book, 'NoVigApp');
+  });
+
+  it('drops every BET that offers no price evidence, and says so', async () => {
+    let printed = '';
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (msg) => {
+      printed += String(msg) + '\n';
+    };
+    console.error = () => {};
+    try {
+      await cmdCard(
+        { screen_ranked: async () => ({ result: [betRow({ marketFairProbability: null, consensusEdge: null })] }) },
+        ['card', 'NCAAF'],
+        { book: 'NoVigApp', json: false }
+      );
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+    assert.ok(/failed the price gate/.test(printed), `expected a gate message, got: ${printed}`);
+    assert.ok(!printed.includes('A -7.5'), 'a row with no price reference must not print as a BET');
+  });
+
+  it('drops a favourite priced on the wrong side of the market', async () => {
+    let printed = '';
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (msg) => {
+      printed += String(msg) + '\n';
+    };
+    console.error = () => {};
+    try {
+      // 50% fair at -135: a losing bet, exactly the shape of the 2026-09-17 card.
+      await cmdCard(
+        { screen_ranked: async () => ({ result: [betRow({ odds: -135, marketFairProbability: 0.5 })] }) },
+        ['card', 'NCAAF'],
+        { book: 'NoVigApp', json: false }
+      );
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+    assert.ok(!printed.includes('A -7.5'), 'a negative-EV favourite must not print as a BET');
+  });
+
+  it('still prints everything with --no-gate', async () => {
+    let printed = '';
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (msg) => {
+      printed += String(msg) + '\n';
+    };
+    console.error = () => {};
+    try {
+      await cmdCard(
+        { screen_ranked: async () => ({ result: [betRow({ marketFairProbability: null })] }) },
+        ['card', 'NCAAF'],
+        {
+          book: 'NoVigApp',
+          json: false,
+          'no-gate': true
+        }
+      );
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+    assert.ok(printed.includes('A -7.5'), 'the gate must be bypassable for inspection');
+    assert.ok(/gate disabled/.test(printed));
   });
 });
