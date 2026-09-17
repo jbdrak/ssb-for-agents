@@ -2,7 +2,12 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeScanCandidates, buildCandidateId, buildScanFingerprint } = require('../lib/record-candidates');
+const {
+  normalizeScanCandidates,
+  buildCandidateId,
+  buildScanFingerprint,
+  gameIdFromPlayId
+} = require('../lib/record-candidates');
 
 // Focused Task 2 tests: normalize scan output into recordable candidates.
 // No recommendation logic, no official-bet creation, deterministic IDs.
@@ -177,6 +182,7 @@ describe('normalizeScanCandidates', () => {
       'movementDisposition',
       'odds',
       'openToCurrentPct',
+      'playId',
       'scanId',
       'selection',
       'start',
@@ -561,6 +567,71 @@ describe('featureSnapshot', () => {
     for (const field of ['outcome', 'result', 'winner', 'finalScore', 'settlement', 'settledAt', 'payout']) {
       assert.equal(Object.prototype.hasOwnProperty.call(snap, field), false);
     }
+  });
+});
+
+describe('record-candidates: fixture identity from a playId', () => {
+  const PLAY_ID = 'WNBA:GAME:Golden_State_Valkyries:Portland_Fire:1789783200::Point Spread::portland fire +12.5';
+
+  it('reads the fixture id out of a playId', () => {
+    assert.equal(gameIdFromPlayId(PLAY_ID), 'WNBA:GAME:Golden_State_Valkyries:Portland_Fire:1789783200');
+  });
+
+  it('refuses an unusable playId instead of inventing one', () => {
+    assert.equal(gameIdFromPlayId(null), null);
+    assert.equal(gameIdFromPlayId(''), null);
+    assert.equal(gameIdFromPlayId('   '), null);
+    assert.equal(gameIdFromPlayId('::Market::Selection'), null);
+  });
+
+  it('derives gameId from playId when the row carries no gameId', () => {
+    // Verified live: 129 of 129 scan rows carry a playId and 0 carry a gameId,
+    // so recording only `play.gameId` is what left every candidate with a null
+    // fixture id and made the live close capture resolve nothing.
+    const out = normalizeScanCandidates([
+      {
+        league: 'WNBA',
+        market: 'Point Spread',
+        plays: [{ playId: PLAY_ID, selection: 'Portland Fire +12.5', odds: -104 }]
+      }
+    ]);
+    assert.equal(out[0].gameId, 'WNBA:GAME:Golden_State_Valkyries:Portland_Fire:1789783200');
+    assert.equal(out[0].playId, PLAY_ID);
+  });
+
+  it('lets an explicit gameId win over the derived one', () => {
+    const out = normalizeScanCandidates([
+      {
+        league: 'WNBA',
+        market: 'Point Spread',
+        plays: [{ gameId: 'explicit', playId: PLAY_ID, selection: 'x', odds: 100 }]
+      }
+    ]);
+    assert.equal(out[0].gameId, 'explicit');
+  });
+
+  it('is identity-stable: a derived gameId hashes the same as an explicit one', () => {
+    const viaPlayId = normalizeScanCandidates([
+      {
+        league: 'WNBA',
+        market: 'Point Spread',
+        plays: [{ playId: PLAY_ID, selection: 'Portland Fire +12.5', odds: -104 }]
+      }
+    ]);
+    const viaGameId = normalizeScanCandidates([
+      {
+        league: 'WNBA',
+        market: 'Point Spread',
+        plays: [
+          {
+            gameId: 'WNBA:GAME:Golden_State_Valkyries:Portland_Fire:1789783200',
+            selection: 'Portland Fire +12.5',
+            odds: -104
+          }
+        ]
+      }
+    ]);
+    assert.equal(viaPlayId[0].candidateId, viaGameId[0].candidateId);
   });
 });
 

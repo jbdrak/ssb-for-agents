@@ -181,6 +181,63 @@ describe('record-metrics: beat the close', () => {
     assert.equal(empty.meanClvPct, null);
     assert.equal(empty.insufficientSample, true);
   });
+
+  it('counts one observation once, even when a scan was recorded twice', () => {
+    // record-scan is keyed on the scan record's content, so re-recording one
+    // scan file yields two scan ids and two candidate ids for one play. Both
+    // rows carry the same close, and counting both inflates the denominator.
+    const duplicated = {
+      candidates: [
+        {
+          candidateId: 'a',
+          gameId: 'G1',
+          market: 'Moneyline',
+          selection: 'X',
+          odds: -110,
+          closeOdds: -120,
+          clvPct: 1.5
+        },
+        {
+          candidateId: 'b',
+          gameId: 'G1',
+          market: 'Moneyline',
+          selection: 'X',
+          odds: -110,
+          closeOdds: -120,
+          clvPct: 1.5
+        }
+      ]
+    };
+    const report = metrics.beatTheCloseReport(duplicated);
+    assert.equal(report.sample, 1);
+    assert.equal(report.beat, 1);
+  });
+
+  it('still counts a genuinely different observation of the same play', () => {
+    const repriced = {
+      candidates: [
+        {
+          candidateId: 'a',
+          gameId: 'G1',
+          market: 'Moneyline',
+          selection: 'X',
+          odds: -110,
+          closeOdds: -120,
+          clvPct: 1.5
+        },
+        {
+          candidateId: 'b',
+          gameId: 'G1',
+          market: 'Moneyline',
+          selection: 'X',
+          odds: -125,
+          closeOdds: -120,
+          clvPct: -2.1
+        }
+      ]
+    };
+    assert.equal(metrics.beatTheCloseReport(repriced).sample, 2);
+  });
 });
 
 describe('record-metrics: settled rows and the full document', () => {

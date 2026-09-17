@@ -156,6 +156,22 @@ describe('capture-close: pass behaviour', () => {
     assert.equal(readLedger(ledgerPath).candidates[0].closeOdds, undefined);
   });
 
+  it('carries the provider\u2019s own failure reason through to the report', async () => {
+    // Without this an unresolved row is just absent, which is how a live
+    // capture returned "unresolved 5" with no way to tell why.
+    const ledgerPath = writeLedger([candidate()]);
+    const result = await captureClose({
+      ledgerPath,
+      now: () => NOW,
+      getPrices: async (targets, ctx) => {
+        for (const target of targets) ctx.recordFailure(target.candidate.candidateId, 'gameId is required');
+        return new Map();
+      }
+    });
+    assert.equal(result.unresolved, 1);
+    assert.equal(result.unresolvedDetail[0].reason, 'gameId is required');
+  });
+
   it('rejects an unparseable quote without inventing a close', async () => {
     const ledgerPath = writeLedger([candidate()]);
     const result = await captureClose({
