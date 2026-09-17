@@ -283,11 +283,19 @@ BOTH legs; a one-legged book is skipped and an unresolvable side yields `null`
 rather than the single-sided implied probability that still carries the hold. It
 is a DECISION-time price, never a game-time close, and is never presented as one.
 `--record-scan` writes it into the candidate feature snapshot, so the ledger
-accumulates the closes the market-relative gate needs. Feeding those recorded
-closes back into `--evaluate` automatically is deliberately NOT done yet: a market
-input must match a record's own market scope, and the probability-carrying records
-are market-wildcards, so pairing them is a scoping decision, not a wiring
-shortcut. `--markets <file>` remains the explicit way to supply closes.
+accumulates the closes the market-relative gate needs. Those recorded closes now
+reach the gate on their own: `--evaluate` reads the ledger's MONEYLINE candidates
+and emits one market-less close per fixture carrying the FAVOURITE's fair
+probability, because the gate's band is the market_favourite_size band. Market-less
+is what makes it safe - every probability-carrying record is a market-wildcard, and
+the bridge serves a wildcard only from a market-less input, so a win probability can
+never be compared against a totals close. A fixture where only the underdog was
+recorded is skipped (`favourite_not_recorded`) rather than passing a dog's price off
+under a favourite's label, and a candidate recorded before this producer landed is
+skipped as `no_fair_probability` - which is what the entire live ledger currently
+reports, nine candidates deep. The candidate's own `odds` is deliberately NOT
+passed: it is a decision price, not a close. `--markets <file>` still ADDS closes
+for a run.
 
 **Settling a source's own fixtures.** `pp ratings --evaluate` scores a source
 against settled results, and until now those could only come from the tracker
@@ -326,6 +334,20 @@ worth knowing before reading a zero from it as a bad week. A real fixture whose
 side cannot be canonicalized still fails closed (`record_identity_unresolved`);
 on the live Sagarin snapshot that is one case, McNeese State vs UTRGV, an FCS
 program the alias registry does not carry.
+
+**`tennis_elo` is outside the snapshot path, structurally.** The contract lists four
+sources and the refresh builder knows three: `refresh-ratings.js --source tennis_elo`
+answers "unknown ratings source". That is not a missing wire. The adapter exports
+`lookupMatch` - a per-matchup lookup - where the builder needs the `fetch*` /
+`normalize*` pair that a league-table source provides. A snapshot source publishes a
+table; a lookup source answers a question about one matchup on demand, and the
+evidence gate scores snapshots. So tennis Elo cannot produce settled evidence as the
+layer is built, whatever data exists - which is worth separating from the separate,
+also-true fact that its upstream archive is gone: `JeffSackmann/tennis_atp` no longer
+exists (that account now carries only the Grand Slam charting repo) and the reachable
+mirrors hold both tours only through mid-2026. A local ATP-only Elo snapshot (asOf
+2026-08-14, built from `~/data/tennis-elo/`) is nonetheless built and available for
+the lookup path.
 
 **Retention: the loop turns on it.**
 `<SSB_RATINGS_DIR>/<source>-<league>-<season>.json` has no date in its name, so
