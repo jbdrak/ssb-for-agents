@@ -276,9 +276,10 @@ of printing zeros that read like results.
 ### The card gate
 
 `pp card` now applies a price test and a volume cap (`--max-bets`, default 2;
-`--min-ev`, default 2%; `--no-gate` to disable). A row is only a BET if the price
-returns positive EV against the decision-time de-vigged fair probability, or beats the
-sharp consensus edge by the same margin. A row with neither has no price evidence and
+`--min-ev`, default 2%; `--min-margin`, default 2 percentage points; `--no-gate` to
+disable). A row is only a BET if the price returns positive EV against the decision-time
+de-vigged fair probability **and** that EV rests on a real absolute margin, or it beats
+the sharp consensus edge by the same margin. A row with neither has no price evidence and
 becomes a LEAN. Anything from a bucket with fewer than 30 decided bets is labelled
 `UNPROVEN`, and `No plays on today's <league> card — all N BET(s) failed the price gate`
 is a legitimate, expected output.
@@ -286,6 +287,16 @@ is a legitimate, expected output.
 The reason is arithmetic: a -135 price needs 57.1% to break even, and the repo's own
 docs score the tier that produced most of these plays at ~50-54% on outcomes. Movement
 alone is a hypothesis, not a price argument — the close is what tests it.
+
+**Why the EV floor alone was not enough.** An EV-only test manufactures longshot value.
+On the first real slate it ran against (2026-09-17) it passed 5 rows out of 122, and every
+one was a plus-money longshot whose whole edge was 0.5-1.1 percentage points of fair
+probability — inside the noise of a de-vig averaged across books, because a longshot price
+is quoted coarsely. A small absolute error in the fair probability is a large relative
+error in EV as the price lengthens, so the gate now also requires an absolute
+fair-probability margin, and reports `margin_too_thin` separately from `ev_below_floor`.
+At -110 a 2pp margin is about +3.8% EV; at +545 it is about +13% EV. Re-run on the same
+slate the honest answer was 0 of 122.
 
 ### The close is not the decision price
 
