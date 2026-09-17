@@ -702,6 +702,36 @@ describe('pp ratings --evaluate', () => {
     assert.notEqual(withMarkets.result.marketRelative.sampleSize, 0, 'the supplied close reaches the gate');
   });
 
+  it('scores a source from a supplied --outcomes file, with an empty ledger', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    // An empty ledger on purpose: a source's calibration must not depend on the
+    // bettor having picked its games, which is why the resolver exists.
+    useLedger(t, ledgerWith([]));
+
+    const bare = await runRatings(['ratings', '--evaluate', '--json']);
+    assert.equal(bare.result.fileOutcomes, 0);
+    assert.equal(bare.result.scores.sagarin.coverage.resolved, 0, 'nothing settles this fixture yet');
+
+    // The ledger holds no result for this fixture; the file does. A source's
+    // calibration must not depend on the bettor having picked its games, which is
+    // the whole reason scripts/resolve-ratings-outcomes.js exists.
+    const outcomesPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pp-ratings-outcomes-')), 'outcomes.json');
+    fs.writeFileSync(
+      outcomesPath,
+      JSON.stringify({ outcomes: [{ league: 'NCAAF', game: 'Pittsburgh vs Syracuse', winner: 'Syracuse' }] })
+    );
+    const withFile = await runRatings(['ratings', '--evaluate', '--json', '--outcomes', outcomesPath]);
+
+    assert.equal(withFile.result.fileOutcomes, 1);
+    assert.equal(withFile.result.outcomes, withFile.result.ledgerOutcomes + 1, 'file and ledger are additive');
+    const coverage = withFile.result.scores.sagarin.coverage;
+    assert.equal(coverage.resolved, 1, 'the file result reaches the gate');
+    assert.equal(coverage.sampleSize, 1);
+    // The point of an outcome is that a probability can finally be scored.
+    assert.equal(typeof withFile.result.scores.sagarin.scores.modelWinProbability.brier.value, 'number');
+  });
+
   it('renders the human path without throwing', async (t) => {
     useRatingsDir(t);
     seedSagarinWithProbability();

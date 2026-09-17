@@ -289,6 +289,39 @@ input must match a record's own market scope, and the probability-carrying recor
 are market-wildcards, so pairing them is a scoping decision, not a wiring
 shortcut. `--markets <file>` remains the explicit way to supply closes.
 
+**Settling a source's own fixtures.** `pp ratings --evaluate` scores a source
+against settled results, and until now those could only come from the tracker
+ledger - that is, only from games someone chose to bet, which makes a source's
+calibration depend on the bettor's picks. `node scripts/resolve-ratings-outcomes.js
+--source sagarin --league NCAAF` settles a source's OWN fixtures from ESPN's
+public college-football scoreboard and writes `cfb-outcomes-<LEAGUE>-<season>.json`
+into the ratings state dir; `pp ratings --evaluate --outcomes <file>` feeds it to
+the gate, and the file and the ledger are additive.
+
+Matching uses the layer's own canonical identity on both sides, and it works only
+because of which ESPN field is read: measured against a live 80-game slate,
+`team.location` canonicalized on 160/160 teams, while `displayName`
+("Pittsburgh Panthers") canonicalized on 0/160 and `shortDisplayName`
+("Western KY") on 151/160. Anything that does not resolve - an unknown school, a
+game ESPN lists twice in the window, an unfinished game, a tie - is counted and
+skipped, never approximated, because a wrong winner would be scored as evidence
+and would move a source's calibration.
+
+**The window is explicit.** A ratings snapshot carries the source's own `asOf`
+("through games of") but no per-fixture kickoff date, so the resolver never infers
+one: `--from`/`--to` state the dates to search, defaulting to the ten days after
+the snapshot's `asOf`. A snapshot of the CURRENT week predicts games that have not
+been played yet, so `matched=0` is often the correct answer. That is a data truth,
+not a bug.
+
+**Known gap: snapshots are not retained.**
+`<SSB_RATINGS_DIR>/<source>-<league>-<season>.json` has no date in its name, so
+every refresh overwrites the previous snapshot. The predictions a settled result
+would be scored against are therefore destroyed before the games are played, and
+the evidence loop cannot close for any source until snapshots are kept per `asOf`.
+Until then `--evaluate` scores whatever the current snapshot can be joined to
+(usually nothing); the numbers it can report come from supplied outcomes.
+
 The Sagarin-only helper `lib/sagarin-external-evaluation.js` is retained and now
 delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
 `segmentSagarinRows`, FBS/FCS segmentation) with its behavior unchanged. Keep

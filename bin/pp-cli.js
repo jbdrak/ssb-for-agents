@@ -450,12 +450,19 @@ Flags:
   --season <a,b>            Filter by season
   --show                    Print per-snapshot detail (method, asOf, fetchedAt, records, path)
   --evaluate                Score each source independently against settled moneyline
-                            outcomes from the tracker ledger (Brier / log loss /
-                            calibration), then run the market-relative gate. Sample and
-                            coverage are reported before any score; a source that cannot
-                            produce a probability is named with its reason.
+                            outcomes (Brier / log loss / calibration), then run the
+                            market-relative gate. Sample and coverage are reported
+                            before any score; a source that cannot produce a
+                            probability is named with its reason. Outcomes come from
+                            the tracker ledger plus any --outcomes file.
+  --outcomes <file>         Extra settled results for the gate (JSON array, or
+                            {outcomes: [...]}), each {league, game, winner}. This is
+                            how a source's own fixtures get scored without a bet having
+                            been placed on them; scripts/resolve-ratings-outcomes.js
+                            writes one.
   --markets <file>          De-vigged closing lines for the market gate (JSON array, or
-                            {markets: [...]}). No producer writes these yet.
+                            {markets: [...]}). A scan records these per candidate;
+                            this flag supplies them explicitly for a run.
   --min-sample <n>          Minimum sample before the market gate reports a number (default 30)
   -j, --json                Raw JSON output
 
@@ -2577,6 +2584,33 @@ function ratingsMarketsFromFile(file) {
 }
 
 /**
+ * Optional settled outcomes from a file (`--outcomes <file>`), in the shape the
+ * bridge already consumes: `[{ league, game, winner }]`.
+ *
+ * The ledger is not the only place a settled result can come from. The ledger
+ * contains only games someone CHOSE TO BET; `node scripts/resolve-ratings-outcomes.js`
+ * settles a source's own fixtures from ESPN, which is what lets a source be
+ * scored before any bet on it has been recorded. A source's calibration should
+ * not depend on the bettor having picked its games.
+ *
+ * @param {unknown} file
+ * @returns {{ok: boolean, error?: string, outcomes: Array<Object>}}
+ */
+function ratingsOutcomesFromFile(file) {
+  if (typeof file !== 'string' || file.trim() === '') return { ok: true, outcomes: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const outcomes = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.outcomes) ? parsed.outcomes : null;
+    if (!outcomes) {
+      return { ok: false, error: `outcomes file ${file} must be a JSON array or { outcomes: [...] }` };
+    }
+    return { ok: true, outcomes };
+  } catch (error) {
+    return { ok: false, error: `unable to read outcomes file ${file}: ${error && error.message}` };
+  }
+}
+
+/**
  * Run the layer's evidence gate end to end: snapshot-store records + settled
  * moneyline outcomes (+ any supplied market closes) through the bridge, then
  * `evaluateRatingSources` and `evaluateMarketRelative`.
@@ -2584,7 +2618,7 @@ function ratingsMarketsFromFile(file) {
  * Read-only and network-free: it reads the snapshot store and the tracker
  * ledger and never fetches, so it is safe to run anywhere.
  *
- * @param {{sources: string[], leagues: string[], seasons: number[], marketsFile?: unknown, minSample?: number}} opts
+ * @param {{sources: string[], leagues: string[], seasons: number[], outcomesFile?: unknown, marketsFile?: unknown, minSample?: number}} opts
  * @returns {Promise<Object>}
  */
 async function buildRatingsEvaluationReport(opts) {
@@ -2606,12 +2640,20 @@ async function buildRatingsEvaluationReport(opts) {
 
   const outcomeResult = ratingsOutcomesFromLedger();
   if (!outcomeResult.ok) throw new Error('ratings: ' + outcomeResult.error);
+  const fileOutcomeResult = ratingsOutcomesFromFile(opts.outcomesFile);
+  if (!fileOutcomeResult.ok) throw new Error('ratings: ' + fileOutcomeResult.error);
   const marketResult = ratingsMarketsFromFile(opts.marketsFile);
   if (!marketResult.ok) throw new Error('ratings: ' + marketResult.error);
 
+  // A supplied file states the same thing the ledger does - who won - so the two
+  // are concatenated rather than one overriding the other. The bridge refuses a
+  // key it cannot resolve and reports the input it skipped, so an unusable or
+  // duplicated entry costs a line in the skip count and nothing else.
+  const outcomes = [...outcomeResult.outcomes, ...fileOutcomeResult.outcomes];
+
   const built = buildRatingEvaluationRows({
     records,
-    outcomes: outcomeResult.outcomes,
+    outcomes,
     markets: marketResult.markets
   });
   const evaluation = evaluateRatingSources(built.rows);
@@ -2623,7 +2665,9 @@ async function buildRatingsEvaluationReport(opts) {
   return {
     snapshotCount: snapshots.length,
     records: records.length,
-    outcomes: outcomeResult.outcomes.length,
+    outcomes: outcomes.length,
+    ledgerOutcomes: outcomeResult.outcomes.length,
+    fileOutcomes: fileOutcomeResult.outcomes.length,
     outcomeSkipped: outcomeResult.skipped,
     markets: marketResult.markets.length,
     counts: built.counts,
@@ -2718,6 +2762,7 @@ async function cmdRatings(positional, flags = {}) {
       sources,
       leagues,
       seasons,
+      outcomesFile: flags.outcomes,
       marketsFile: flags.markets,
       minSample
     });
