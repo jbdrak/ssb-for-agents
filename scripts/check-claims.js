@@ -564,6 +564,75 @@ if (!Array.isArray(RATINGS_SOURCES)) {
   }
 }
 
+// --- 5h. Documented CLI commands exist ---------------------------------------
+
+// A doc that tells a reader to run a command that no longer exists is a defect
+// they hit on their first try, and nothing checked for it: the README's own
+// `pp-query` block listed `recommended`, which the query CLI has not carried
+// since it was replaced by `quick_screen(mode: 'recommended')`. Only code spans
+// and fenced blocks are read - a bare `pp <word>` in prose is English, not a
+// command reference, and matching those produces nothing but noise.
+//
+// The two entrypoints are separate, so a command is checked against its own:
+// `pp-query` against the query CLI's exported inventory, `pp` against the
+// command list that `pp --help` prints (the same list a reader sees).
+const QUERY_COMMANDS = (() => {
+  try {
+    return new Set(require(path.join(repoRoot, 'scripts/query-ssb.js')).getCommandInventory().map((c) => c.command));
+  } catch {
+    return null;
+  }
+})();
+
+const PP_COMMANDS = (() => {
+  try {
+    const src = fs.readFileSync(path.join(repoRoot, 'bin/pp-cli.js'), 'utf8');
+    const names = new Set([...src.matchAll(/case '([a-z][\w-]*)':/g)].map((m) => m[1]));
+    // Deprecated-but-accepted aliases belong here too: `pp doctor` still runs
+    // (it redirects to `health`) and is deliberately absent from `--help`, so the
+    // dispatch table is the only place that says it is accepted. Reading `--help`
+    // instead made this check cry wolf on the README's own `pp doctor` line.
+    const compat = /OLD_CMD_MAP\s*=\s*\{([\s\S]*?)\}/.exec(src);
+    if (compat) for (const m of compat[1].matchAll(/([a-z][\w-]*)\s*:/g)) names.add(m[1]);
+    return names.size > 0 ? names : null;
+  } catch {
+    return null;
+  }
+})();
+
+function codeBits(text) {
+  const bits = [];
+  for (const m of text.matchAll(/```[a-zA-Z]*\n([\s\S]*?)```/g)) bits.push(m[1]);
+  for (const m of text.matchAll(/`([^`\n]+)`/g)) bits.push(m[1]);
+  return bits;
+}
+
+if (QUERY_COMMANDS === null && PP_COMMANDS === null) {
+  warn('neither CLI could be loaded — documented-command claims not verified');
+} else {
+  const unknownCommands = new Map();
+  for (const [rel, lines] of activeDocLines) {
+    for (const bit of codeBits(lines.join('\n'))) {
+      for (const m of bit.matchAll(/^\s*(pp|pp-query)\s+([a-z][\w-]*)/gm)) {
+        const [, bin, cmd] = m;
+        const known = bin === 'pp-query' ? QUERY_COMMANDS : PP_COMMANDS;
+        if (known === null || known.has(cmd)) continue;
+        if (!unknownCommands.has(cmd)) unknownCommands.set(cmd, new Set());
+        unknownCommands.get(cmd).add(`${rel} (${bin})`);
+      }
+    }
+  }
+  if (unknownCommands.size > 0) {
+    const detail = [...unknownCommands.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([cmd, where]) => `${cmd} in ${[...where].join(', ')}`)
+      .join('; ');
+    fail(`active docs reference CLI commands that do not exist: ${detail}.`);
+  } else {
+    ok('every CLI command referenced in the active docs exists in its own entrypoint');
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Summary
 // ----------------------------------------------------------------------------

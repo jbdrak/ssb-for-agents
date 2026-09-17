@@ -591,7 +591,7 @@ The [Positive EV Command Center](https://github.com/jbdrak/positive-ev-command-c
 pp-query screen --league NBA --market Moneyline
 pp-query screen --league EPL --market "Total Goals"
 pp-query screen --league Soccer --league-name EPL --market "Total Goals"
-pp-query recommended --leagues NBA,MLB
+pp-query sharp-plays --leagues NBA,MLB --market Moneyline
 pp-query login
 pp-query doctor
 ```
