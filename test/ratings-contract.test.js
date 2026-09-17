@@ -211,7 +211,7 @@ describe('ssb-ratings-contract', () => {
   });
 
   it('exposes the canonical sources', () => {
-    assert.deepEqual(SOURCES, ['massey', 'sagarin', 'sasser', 'tennis_elo']);
+    assert.deepEqual(SOURCES, ['massey', 'massey_games', 'sagarin', 'sasser', 'tennis_elo']);
     assert.deepEqual(PROBABILITY_KINDS, ['published', 'derived']);
   });
 

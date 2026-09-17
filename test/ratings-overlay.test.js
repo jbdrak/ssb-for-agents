@@ -208,7 +208,13 @@ describe('applyRatingsOverlay', () => {
     const rows = applyRatingsOverlay(clone([{ league: 'Tennis', market: 'Moneyline', game: 'Alcaraz vs Sinner' }]), {
       ratings: ALL_RECORDS
     });
-    assert.deepEqual(rows[0].ratings, { massey: null, sagarin: null, sasser: null, tennis_elo: null });
+    assert.deepEqual(rows[0].ratings, {
+      massey: null,
+      massey_games: null,
+      sagarin: null,
+      sasser: null,
+      tennis_elo: null
+    });
   });
 
   it('never clobbers a pre-existing row.ratings (only add)', () => {
