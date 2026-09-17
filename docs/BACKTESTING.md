@@ -167,8 +167,9 @@ play responses.
 
 ### External-model benchmark adapters
 
-External rating and prediction sources (Massey, Sagarin, Sasser, plus the
-locally-built tennis Elo snapshot) live in a **shadow / benchmark layer** that is
+External rating and prediction sources (Massey's ratings table and games board,
+Sagarin, Sasser, plus the locally-built tennis Elo snapshot) live in a **shadow /
+benchmark layer** that is
 deliberately never wired into live `BET` eligibility. Ratings are additive context for evaluation; they must not change
 `kaiCall`, `displayTier`, `confidenceTier`, `finalVerdict`, `consensusEdge`,
 `screenScore`, or `riskScore`. The overlay's two-run invariant test proves it
@@ -198,7 +199,15 @@ Prefer these adapters over changing the live ranking path or the v2 ledger.
   `lib/ratings-sources/massey-web.js`, the transport that gets past its host's
   bot wall (got-scraping) and de-obfuscates the page's export payload; the other
   two sources need no such layer.
-- `lib/ratings-sources/tennis-elo.js` — the fourth source adapter. It has no
+- `lib/ratings-sources/massey-games.js` — Massey's per-sport **games board**,
+  registered as its own source (`massey_games`). The ratings table above is one
+  row per team with no opponent, and the contract is matchup-shaped, so every
+  `massey` record is dropped by the bridge; the games board is one row per
+  fixture and carries Massey's printed `Pwin`, which makes it the only Massey
+  table that can be scored - and the only source in the layer covering MLB. It
+  shares `massey-web.js`'s transport and reads columns by title. Emits
+  `Scheduled` rows only: a settled row's result is already known at fetch time.
+- `lib/ratings-sources/tennis-elo.js` — the tennis source adapter. It has no
   fetch at all: it normalizes a locally-built snapshot (`lib/tennis-elo-data.js`)
   into the same contract, is **Moneyline-only**, and identifies a fixture by its
   two player names. See the coverage table below.
@@ -206,7 +215,7 @@ Prefer these adapters over changing the live ranking path or the v2 ledger.
   state dir, never the repo (see below).
 - `lib/ssb-ratings-overlay.js` — additive `applyRatingsOverlay`: attaches
   `row.ratings = { <source>: … }`, one entry per source in the contract's
-  `SOURCES` (massey, sagarin, sasser, tennis_elo), on the **composite**
+  `SOURCES` (massey, massey_games, sagarin, sasser, tennis_elo), on the **composite**
   `(league, canonical game identity, market)` key, only adds (never clobbers a
   pre-existing `row.ratings`), and fails closed with `null` on any unresolvable
   team/league/matchup. Identity is not the only way a record can be wrong: the
@@ -232,10 +241,12 @@ Prefer these adapters over changing the live ranking path or the v2 ledger.
   closes into exactly the rows `evaluateRatingSources` / `evaluateMarketRelative`
   consume, and returns `{ rows, sources, skipped, counts }`. Each source declares
   where its probability comes from: **Sagarin** carries the page's own `WIN%`
-  (`published`, whole-percent precision), **tennis Elo** carries its engine's own
-  Elo expectation (`derived`, no fitted parameters), and **Massey** and **Sasser**
-  are declined with a stated reason because neither publishes a win probability and
-  no documented rating-to-probability conversion exists for Massey. That reason
+  (`published`, whole-percent precision), **massey_games** carries the games
+  board's printed `Pwin` (`published`), **tennis Elo** carries its engine's own
+  Elo expectation (`derived`, no fitted parameters), and **Massey**'s ratings
+  table and **Sasser** are declined with a stated reason because neither
+  publishes a win probability and no documented rating-to-probability conversion
+  exists for Massey. That reason
   matters structurally: the evaluator omits a source with no rows from its own
   output, so without it a source that can never produce a number would read exactly
   like a quiet slate. Join rules are the layer's, not new ones: identity comes from
@@ -272,7 +283,8 @@ from settled **moneyline** bets in the ledger: a win probability is a moneyline
 concept, and only a moneyline result names the game's winner, so run-line /
 handicap / total settlements are never converted into one. The gate reports
 `sample=0` until settled moneyline outcomes exist for a league a
-probability-carrying source covers (Sagarin: NCAAF/NFL; tennis Elo: TENNIS).
+probability-carrying source covers (massey_games: MLB, MLS, NBA, NCAAB, NCAAF,
+NFL, NHL, WNBA; Sagarin: NCAAF/NFL; tennis Elo: TENNIS).
 
 **The de-vigged close.** A scan row now carries `marketFairProbability`: the
 decision-time fair price for that side, derived in the candidate mapper
@@ -399,12 +411,13 @@ delegates into that shared module (`normalizeSagarinRows`, `scoreSagarinRows`,
 
 **Per-source coverage (canonical repo league codes)**
 
-| Source     | Leagues                                           | Notes                                                                                                     |
-| ---------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Massey     | CFB→`NCAAF`, NFL, NBA, NCAAB, NHL, MLB, MLS, WNBA | The only source with MLB **team** ratings. NCAAB reads the NCAA D1 ratings table.                         |
-| Sagarin    | CFB→`NCAAF`, NFL, NBA, CBB→`NCAAB`, NHL, MLS      | **No MLB team ratings** — Sagarin's baseball page is player ratings.                                      |
-| Sasser     | CFB→`NCAAF` only                                  | A per-game projection overlay, not a rating (`ratingA/B` null, `coverage: 'partial'` by design).          |
-| tennis_elo | `TENNIS` only                                     | A locally-built, Moneyline-only Elo (`lib/tennis-elo-data.js`); no fetch, and no totals/handicap pricing. |
+| Source       | Leagues                                           | Notes                                                                                                                                      |
+| ------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Massey       | CFB→`NCAAF`, NFL, NBA, NCAAB, NHL, MLB, MLS, WNBA | The only source with MLB **team** ratings. NCAAB reads the NCAA D1 ratings table.                                                          |
+| massey_games | CFB→`NCAAF`, NFL, NBA, NCAAB, NHL, MLB, MLS, WNBA | Massey's per-sport **games board**: one row per fixture carrying its printed `Pwin`. The only probability-carrying source that covers MLB. |
+| Sagarin      | CFB→`NCAAF`, NFL, NBA, CBB→`NCAAB`, NHL, MLS      | **No MLB team ratings** — Sagarin's baseball page is player ratings.                                                                       |
+| Sasser       | CFB→`NCAAF` only                                  | A per-game projection overlay, not a rating (`ratingA/B` null, `coverage: 'partial'` by design).                                           |
+| tennis_elo   | `TENNIS` only                                     | A locally-built, Moneyline-only Elo (`lib/tennis-elo-data.js`); no fetch, and no totals/handicap pricing.                                  |
 
 Massey's NCAAB coverage reads the NCAA D1 ratings page, and the team-alias
 registry covers the live D1 table: every row of the 2026-09-16 Massey NCAAB export

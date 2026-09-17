@@ -319,3 +319,44 @@ describe('ssb-ratings-snapshot retention', () => {
     assert.deepEqual(history.snapshots, []);
   });
 });
+
+describe('ssb-ratings-snapshot: source ids that carry an underscore', () => {
+  // The filename pattern is what makes a snapshot readable at all. A source id
+  // that cannot match it is not merely unlisted - it is invisible to EVERY read
+  // path, so the source looks like it has no data rather than like a name
+  // mismatch. Two contract sources carry an underscore (`massey_games`,
+  // `tennis_elo`), so this is a regression guard, not a hypothetical.
+  const MASSEY_GAMES = {
+    source: 'massey_games',
+    league: 'MLB',
+    method: 'games',
+    records: [sampleRecord({ source: 'massey_games', league: 'MLB', method: 'games' })]
+  };
+
+  it('lists and loads a snapshot whose source id carries an underscore', () => {
+    const saved = store.saveSnapshot(sampleSnapshot(MASSEY_GAMES));
+    assert.equal(saved.ok, true, JSON.stringify(saved.errors));
+    assert.equal(path.basename(saved.path), 'massey_games-MLB-2026.json');
+
+    const listed = store.listSnapshots();
+    assert.equal(listed.ok, true);
+    assert.deepEqual(
+      listed.snapshots.map((summary) => `${summary.source}-${summary.league}`),
+      ['massey_games-MLB']
+    );
+
+    const loaded = store.loadSnapshot('massey_games', 'MLB', 2026);
+    assert.equal(loaded.ok, true, JSON.stringify(loaded.errors));
+    assert.equal(loaded.snapshot.records.length, 1);
+  });
+
+  it('retains and lists history for a source id carrying an underscore', () => {
+    store.saveSnapshot(sampleSnapshot(MASSEY_GAMES));
+    const history = store.listSnapshotHistory();
+    assert.equal(history.ok, true);
+    assert.deepEqual(
+      history.snapshots.map((summary) => summary.source),
+      ['massey_games']
+    );
+  });
+});

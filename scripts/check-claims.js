@@ -259,23 +259,25 @@ function runBacktestCheck() {
     console.log(`  TIER 3: ${rate(t3.wins, t3Total)} (${t3.wins}W/${t3.losses}L/${t3Total} plays)`);
     console.log(`  TIER 4: ${rate(t4.wins, t4Total)} (${t4.wins}W/${t4.losses}L/${t4Total} plays)`);
 
-    // The README's strongest directional claim: "TIER 4 > TIER 2 inversion | Fixed in v1.5.1"
-    // This is reported as a WARNING, not a failure, because the synthetic backtest's
-    // TIER 2 sample is small (typically <30 plays) and noisy — a single seed run can
-    // show the inversion even when the algorithm is directionally correct. Treat
-    // sustained inversion across multiple runs (or a real code change to risk scoring)
-    // as the signal that the claim is stale. A warning here means "review the
-    // numbers in README's 'The numbers' section" — not "ship is blocked".
+    // Tier ORDERING: a risk-flagged TIER 4 must not out-perform TIER 2, or the
+    // risk scoring is pointing the wrong way. Reported as a WARNING, not a
+    // failure, because the TIER 2 sample is small and noisy — a single run can
+    // show the inversion even when the algorithm is directionally correct.
+    // Treat sustained inversion across runs (or a real change to risk scoring)
+    // as the signal that something moved. The README makes no tier-ordering
+    // claim any more (it carries an explicit "profitability is UNPROVEN" scope
+    // note instead), so a warning here means "the ordering regressed in this
+    // run" — not "ship is blocked".
     if (t2Total === 0 || t4Total === 0) {
-      warn(`TIER 2 or TIER 4 has 0 plays — can't verify inversion fix claim`);
+      warn(`TIER 2 or TIER 4 has 0 plays — can't verify tier ordering`);
     } else if (t4.wins / t4Total > t2.wins / t2Total) {
       const gap = ((t4.wins / t4Total - t2.wins / t2Total) * 100).toFixed(1);
       warn(
-        `TIER 4 hit rate (${rate(t4.wins, t4Total)}) > TIER 2 hit rate (${rate(t2.wins, t2Total)}, +${gap}pp) in this run. The README's "TIER 4 > TIER 2 inversion fixed in v1.5.1" claim is based on a small TIER 2 sample (${t2Total} plays) — review whether the README's "The numbers" section is still accurate. NOT a release blocker.`
+        `TIER 4 hit rate (${rate(t4.wins, t4Total)}) > TIER 2 hit rate (${rate(t2.wins, t2Total)}, +${gap}pp) in this run, so the tier ordering is inverted on a TIER 2 sample of ${t2Total} plays. Not a release blocker: the README claims no tier ordering and the sample is small.`
       );
     } else {
       ok(
-        `TIER 4 ≤ TIER 2 ordering holds (${rate(t4.wins, t4Total)} ≤ ${rate(t2.wins, t2Total)}) — README's "TIER 4 inversion fixed" claim is directionally supported in this run`
+        `tier ordering holds (TIER 4 ${rate(t4.wins, t4Total)} ≤ TIER 2 ${rate(t2.wins, t2Total)}) in this run`
       );
     }
 
