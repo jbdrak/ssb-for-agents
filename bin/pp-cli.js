@@ -16,7 +16,9 @@ const { parseGameStartMs, americanOddsToImpliedProbability } = require(PROJECT +
 const { recoverTennisFromScreen } = require(PROJECT + '/lib/tennis-fallback');
 const { loadLedger, saveLedger, addRecord, defaultLedgerPath } = require(PROJECT + '/lib/record-ledger');
 const { normalizeScanCandidates, buildScanFingerprint } = require(PROJECT + '/lib/record-candidates');
-const { cardGateReport, DEFAULT_MAX_BETS, DEFAULT_MIN_EV_PCT } = require(PROJECT + '/lib/card-gate');
+const { cardGateReport, DEFAULT_MAX_BETS, DEFAULT_MIN_EV_PCT, DEFAULT_MIN_FAIR_MARGIN_PTS } = require(
+  PROJECT + '/lib/card-gate'
+);
 const { evaluateLedger } = require(PROJECT + '/lib/record-metrics');
 const { promoteCards } = require(PROJECT + '/lib/record-card');
 const { analyzeWalletPlays } = require(PROJECT + '/lib/ssb-wallet-plays');
@@ -207,7 +209,8 @@ Commands:
   links      Get sportsbook event links from PP
   rank       Ranked plays for a league
   card       Today's bet slip — BETs that clear the price gate, kickoff-sorted
-             (--max-bets N cap, --min-ev PCT floor, --no-gate to disable)
+             (--max-bets N cap, --min-ev PCT floor, --min-margin PP fair-margin floor,
+              --no-gate to disable)
   wallets    Top Polymarket wallets vs a book (bet/pass)
   fantasy    Fantasy optimizer props
   health     Auth + backend health check
@@ -1939,11 +1942,15 @@ async function cmdCard(handlers, positional, flags) {
   // 13-play card of -133/-135 coin flips happens.
   const maxBets = Number.isFinite(Number(flags['max-bets'])) ? Number(flags['max-bets']) : DEFAULT_MAX_BETS;
   const minEvPct = Number.isFinite(Number(flags['min-ev'])) ? Number(flags['min-ev']) : DEFAULT_MIN_EV_PCT;
+  const minFairMarginPts = Number.isFinite(Number(flags['min-margin']))
+    ? Number(flags['min-margin'])
+    : DEFAULT_MIN_FAIR_MARGIN_PTS;
   const loaded = flags['no-gate'] === undefined ? loadLedger() : null;
   const report = cardGateReport(card, {
     gateEnabled: flags['no-gate'] === undefined,
     maxBets,
     minEvPct,
+    minFairMarginPts,
     evaluation: loaded && loaded.ok ? evaluateLedger(loaded.ledger) : null,
     context: { league, book, considerCount, startedCount, jsonOut, gameCounts, style: { bold: B, red: RED, reset: R } }
   });

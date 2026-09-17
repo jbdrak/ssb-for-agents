@@ -61,6 +61,39 @@ describe('card-gate: the price test', () => {
   it('reads the fair probability from a nested play object too', () => {
     assert.equal(gate.priceGate({ odds: 100, play: { marketFairProbability: 0.6 } }).pass, true);
   });
+
+  it('measures the absolute margin the EV rests on', () => {
+    assert.equal(gate.fairMarginPoints({ odds: 100, marketFairProbability: 0.6 }), 10);
+    // -104 implies 50.98%; a 49.25% fair price is about 1.73pp UNDER it.
+    const under = gate.fairMarginPoints({ odds: -104, marketFairProbability: 0.4925 });
+    assert.ok(under < -1.7 && under > -1.74, `got ${under}`);
+    assert.equal(gate.fairMarginPoints({ odds: '49.0%', marketFairProbability: 0.6 }), null);
+  });
+
+  it('refuses a longshot whose EV rests on a margin too thin to trust', () => {
+    // The real 2026-09-17 case: fair 16.5% at +525 is +3.13% EV, which clears
+    // the EV floor, but the whole edge is 0.50 percentage points of fair
+    // probability - inside de-vig noise at a coarsely quoted longshot price.
+    const result = gate.priceGate({ odds: 525, marketFairProbability: 0.165 });
+    assert.ok(result.evPct > 3, `expected EV above the floor, got ${result.evPct}`);
+    assert.equal(result.marginPoints, 0.5);
+    assert.equal(result.pass, false);
+    assert.equal(result.reason, 'margin_too_thin');
+  });
+
+  it('passes a short price whose margin is real, and reports marginPoints', () => {
+    const result = gate.priceGate({ odds: -110, marketFairProbability: 0.5444 });
+    assert.equal(result.pass, true);
+    assert.equal(result.reason, 'positive_ev');
+    assert.ok(result.marginPoints >= 2);
+  });
+
+  it('honours an explicit margin floor, including zero to recover EV-only behaviour', () => {
+    const thin = { odds: 525, marketFairProbability: 0.165 };
+    assert.equal(gate.priceGate(thin, { minFairMarginPts: 0 }).pass, true);
+    assert.equal(gate.priceGate(thin, { minFairMarginPts: 0 }).reason, 'positive_ev');
+    assert.equal(gate.priceGate({ odds: -110, marketFairProbability: 0.5444 }, { minFairMarginPts: 10 }).pass, false);
+  });
 });
 
 describe('card-gate: bucket evidence', () => {
@@ -119,7 +152,27 @@ describe('card-gate: the whole card', () => {
     assert.equal(result.bets.length, 1);
     assert.equal(result.bets[0].unproven, true);
     assert.equal(result.bets[0].bucketSample, null);
+    assert.equal(result.bets[0].marginPoints, 20);
     assert.ok(result.notes.some((note) => /UNPROVEN/.test(note)));
+  });
+
+  it('empties a longshot-only slate, and the dropped rows carry their margin', () => {
+    // Regression fixture from the real 2026-09-17 slate: five survivors, every
+    // one a plus-money longshot resting on under 1.1pp of fair probability.
+    const rows = [
+      { selection: 'Miami Dolphins', odds: 809, marketFairProbability: 0.1209, tier: 'TIER 2' },
+      { selection: 'Tuivasa', odds: 525, marketFairProbability: 0.165, tier: 'TIER 2' },
+      { selection: 'Over 4.5', odds: 545, marketFairProbability: 0.1602, tier: 'TIER 2' },
+      { selection: 'Tennessee Titans', odds: 300, marketFairProbability: 0.2558, tier: 'TIER 2' },
+      { selection: 'Detroit Tigers -1.5', odds: 182, marketFairProbability: 0.365, tier: 'TIER 2' }
+    ];
+    const result = gate.applyCardGate(rows, { evaluation });
+    assert.equal(result.bets.length, 0, 'not one of these should be presentable as a BET');
+    assert.equal(result.dropped.length, 5);
+    for (const dropped of result.dropped) {
+      assert.equal(dropped.reason, 'margin_too_thin');
+      assert.ok(dropped.marginPoints < 2);
+    }
   });
 
   it('tolerates an empty card without inventing notes', () => {
