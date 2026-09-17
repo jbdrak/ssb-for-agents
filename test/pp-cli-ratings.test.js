@@ -770,7 +770,36 @@ describe('pp ratings --evaluate', () => {
     assert.notEqual(result.marketRelative.sampleSize, 0, 'the market gate has a close to work with');
   });
 
-  it('will not hand an underdog price to the gate labelled as the favourite', async (t) => {
+  it('reads the de-vigged price from the feature snapshot, where a real scan writes it', async (t) => {
+    useRatingsDir(t);
+    seedSagarinWithProbability();
+    useLedger(t, {
+      version: 2,
+      scans: [],
+      candidates: [
+        {
+          candidateId: 'c1',
+          game: 'Pittsburgh vs Syracuse',
+          league: 'NCAAF',
+          market: 'Moneyline',
+          selection: 'Syracuse',
+          odds: -140,
+          // The producer writes it onto the candidate's immutable feature
+          // snapshot, not onto the mutable top-level row.
+          featureSnapshot: { marketFairProbability: 0.63 }
+        }
+      ],
+      bets: [settledMoneylineBet()],
+      settlements: []
+    });
+
+    const { result } = await runRatings(['ratings', '--evaluate', '--json']);
+
+    assert.equal(result.ledgerMarkets, 1);
+    assert.ok(Math.abs(result.marketCloses[0].marketFairProbability - 0.63) < 1e-9);
+  });
+
+  it('turns a one-sided UNDERDOG record into the favourite price the gate needs', async (t) => {
     useRatingsDir(t);
     seedSagarinWithProbability();
     useLedger(t, {
@@ -784,8 +813,10 @@ describe('pp ratings --evaluate', () => {
           market: 'Moneyline',
           selection: 'Pittsburgh',
           odds: 120,
-          // Below 0.5: this is the dog's price, so the favourite was never recorded.
-          marketFairProbability: 0.37
+          // A scan usually records only the side it considers playable, and that is
+          // often the dog. A two-way de-vig's sides sum to 1 by construction, so
+          // 0.37 IS the favourite's 0.63 seen from the other end.
+          featureSnapshot: { marketFairProbability: 0.37 }
         }
       ],
       bets: [settledMoneylineBet()],
@@ -794,9 +825,9 @@ describe('pp ratings --evaluate', () => {
 
     const { result } = await runRatings(['ratings', '--evaluate', '--json']);
 
-    assert.equal(result.ledgerMarkets, 0, 'an underdog price is not a favourite close');
-    assert.equal(result.marketRelative.sampleSize, 0);
-    assert.equal(result.marketSkipped[0].reason, 'favourite_not_recorded');
+    assert.equal(result.ledgerMarkets, 1, 'a one-sided record still yields a favourite price');
+    assert.ok(Math.abs(result.marketCloses[0].marketFairProbability - 0.63) < 1e-9);
+    assert.notEqual(result.marketRelative.sampleSize, 0);
   });
 
   it('ignores a recorded candidate that is not a moneyline close', async (t) => {

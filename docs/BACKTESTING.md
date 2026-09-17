@@ -289,13 +289,18 @@ and emits one market-less close per fixture carrying the FAVOURITE's fair
 probability, because the gate's band is the market_favourite_size band. Market-less
 is what makes it safe - every probability-carrying record is a market-wildcard, and
 the bridge serves a wildcard only from a market-less input, so a win probability can
-never be compared against a totals close. A fixture where only the underdog was
-recorded is skipped (`favourite_not_recorded`) rather than passing a dog's price off
-under a favourite's label, and a candidate recorded before this producer landed is
-skipped as `no_fair_probability` - which is what the entire live ledger currently
-reports, nine candidates deep. The candidate's own `odds` is deliberately NOT
-passed: it is a decision price, not a close. `--markets <file>` still ADDS closes
-for a run.
+never be compared against a totals close. The de-vigged price lives on each
+candidate's immutable `featureSnapshot`, not the mutable top-level row. A scan
+usually records only the side it considers playable, and that is often the dog, so
+the two sides are used as the complementary pair they are: whichever of the recorded
+value and its complement is larger is the favourite's. That is an identity of a
+two-way de-vig - each book's pair sums to 1 and both sides are averaged over the same
+books - not an estimate, and it is why a one-sided record still yields the number the
+gate needs. A candidate recorded before this producer landed is skipped as
+`no_fair_probability`. The candidate's own `odds` is deliberately NOT passed: it is a
+decision price, not a close. `--markets <file>` still ADDS closes for a run, and the
+report exposes what it used as `marketCloses`, so an empty market gate is answerable
+without re-deriving the inputs by hand.
 
 **Settling a source's own fixtures.** `pp ratings --evaluate` scores a source
 against settled results, and until now those could only come from the tracker

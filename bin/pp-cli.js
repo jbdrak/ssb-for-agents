@@ -2609,12 +2609,14 @@ function ratingsMarketsFromFile(file) {
  *     probability-carrying record is one) only from a market-less input. Leaving
  *     the label off is what guarantees a win probability is never compared
  *     against a totals close.
- *   - ONE ROW PER FIXTURE, carrying the FAVOURITE's probability. The gate's
- *     market band is the market_favourite_size band, so the input must be the
- *     favourite's number. A scan may record one side or both, so the sides are
- *     grouped and the highest fair probability wins; if nothing above 0.5 was
- *     recorded, the favourite was never captured and the fixture is skipped
- *     rather than emitting an underdog's price under a favourite's label.
+ *   - ONE ROW PER FIXTURE, carrying the FAVOURITE's probability. The gate's market
+ *     band is the market_favourite_size band, so the input must be the favourite's
+ *     number. A scan usually records only the side it considers playable, often
+ *     the underdog, so the two sides' fair probabilities are used as the
+ *     complementary pair they are: whichever of the recorded value and its
+ *     complement is larger is the favourite's. That is an identity of a two-way
+ *     de-vig, not an estimate, and it is why a one-sided record still yields the
+ *     number the gate needs.
  *
  * The candidate's `odds` is deliberately NOT passed. It is the price available
  * when the scan ran, not a closing price, and feeding a decision price into a
@@ -2635,7 +2637,14 @@ function ratingsMarketsFromLedger() {
       skipped.push({ game: candidate.game, reason: 'unusable_identity' });
       continue;
     }
-    const fair = Number(candidate.marketFairProbability);
+    // The de-vigged price lives on the candidate's immutable feature snapshot,
+    // which is where the producer writes it. The top-level field is read as a
+    // fallback for a caller that carries it directly; `Number(null)` is 0 and
+    // `Number(undefined)` is NaN, and both are refused below.
+    const snapshot = candidate.featureSnapshot || {};
+    const recorded =
+      snapshot.marketFairProbability != null ? snapshot.marketFairProbability : candidate.marketFairProbability;
+    const fair = Number(recorded);
     if (!Number.isFinite(fair) || fair <= 0 || fair >= 1) {
       // Absent on every candidate recorded before the de-vig producer landed.
       skipped.push({ game: candidate.game, reason: 'no_fair_probability' });
@@ -2643,19 +2652,22 @@ function ratingsMarketsFromLedger() {
     }
     const key = `${candidate.league}|${candidate.game}`;
     const held = byFixture.get(key);
-    if (!held || fair > held.marketFairProbability) {
-      byFixture.set(key, { league: candidate.league, game: candidate.game, marketFairProbability: fair });
+    if (!held || fair > held.recorded) {
+      byFixture.set(key, { league: candidate.league, game: candidate.game, recorded: fair });
     }
   }
 
   const markets = [];
-  for (const [key, row] of byFixture) {
-    if (row.marketFairProbability <= 0.5) {
-      skipped.push({ game: row.game, reason: 'favourite_not_recorded' });
-      continue;
-    }
-    markets.push(row);
-    byFixture.delete(key);
+  for (const row of byFixture.values()) {
+    // The gate wants the FAVOURITE's probability, but a scan usually records only
+    // the side it considers playable - often the underdog. In a two-way de-vigged
+    // market the two sides' fair probabilities sum to 1 BY CONSTRUCTION: each
+    // book's own pair sums to 1, and both sides are averaged over the same set of
+    // books that quote both legs. So the favourite's number is whichever of
+    // `recorded` and `1 - recorded` is larger - an identity of the de-vig, not an
+    // estimate, which is why this is used instead of refusing the fixture.
+    const favoriteFair = Math.max(row.recorded, 1 - row.recorded);
+    markets.push({ league: row.league, game: row.game, marketFairProbability: favoriteFair });
   }
 
   return { ok: true, markets, skipped };
@@ -2769,6 +2781,9 @@ async function buildRatingsEvaluationReport(opts) {
     fileOutcomes: fileOutcomeResult.outcomes.length,
     outcomeSkipped: outcomeResult.skipped,
     markets: markets.length,
+    // The closes actually used, so "why is the market gate empty?" is answerable
+    // without re-deriving them by hand.
+    marketCloses: markets,
     ledgerMarkets: ledgerMarketResult.markets.length,
     fileMarkets: marketResult.markets.length,
     marketSkipped: ledgerMarketResult.skipped,
