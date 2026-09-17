@@ -3704,9 +3704,15 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": ["supportive_clean", "supportive_bouncy", "insufficient", "adverse_full"]
+                      "enum": [
+                        "supportive_clean",
+                        "supportive_bouncy",
+                        "insufficient",
+                        "adverse_recent",
+                        "adverse_full"
+                      ]
                     },
-                    "description": "Optional filter by movement disposition. Example: [\"supportive_clean\", \"supportive_bouncy\"] to see only plays where the line is moving the right direction. Default: no filter (all movement types)."
+                    "description": "Optional filter by movement disposition. Example: [\"supportive_clean\", \"supportive_bouncy\"] to see only plays where the line is moving the right direction. Default: no filter (all movement types). Note: adverse_* values only ever match tennis-fallback rows — non-fallback rows are dropped from the candidate pool before this filter runs, so an adverse filter is not a way to list what the scan rejected. Use `rank <league> --all-markets -j` for the full adverse board."
                   },
                   "minEV": {
                     "type": "number",
@@ -4132,9 +4138,15 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": ["supportive_clean", "supportive_bouncy", "insufficient", "adverse_full"]
+                      "enum": [
+                        "supportive_clean",
+                        "supportive_bouncy",
+                        "insufficient",
+                        "adverse_recent",
+                        "adverse_full"
+                      ]
                     },
-                    "description": "Optional filter by movement disposition. Example: [\"supportive_clean\", \"supportive_bouncy\"] to see only plays where the line is moving the right direction. Default: no filter (all movement types)."
+                    "description": "Optional filter by movement disposition. Example: [\"supportive_clean\", \"supportive_bouncy\"] to see only plays where the line is moving the right direction. Default: no filter (all movement types). Note: adverse_* values only ever match tennis-fallback rows — non-fallback rows are dropped from the candidate pool before this filter runs, so an adverse filter is not a way to list what the scan rejected. Use `rank <league> --all-markets -j` for the full adverse board."
                   }
                 },
                 "additionalProperties": false
@@ -4398,9 +4410,15 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": ["supportive_clean", "supportive_bouncy", "insufficient", "adverse_full"]
+                      "enum": [
+                        "supportive_clean",
+                        "supportive_bouncy",
+                        "insufficient",
+                        "adverse_recent",
+                        "adverse_full"
+                      ]
                     },
-                    "description": "Optional filter by movement disposition. Example: [\"supportive_clean\", \"supportive_bouncy\"] to see only plays where the line is moving the right direction. Default: no filter (all movement types)."
+                    "description": "Optional filter by movement disposition. Example: [\"supportive_clean\", \"supportive_bouncy\"] to see only plays where the line is moving the right direction. Default: no filter (all movement types). Note: adverse_* values only ever match tennis-fallback rows — non-fallback rows are dropped from the candidate pool before this filter runs, so an adverse filter is not a way to list what the scan rejected. Use `rank <league> --all-markets -j` for the full adverse board."
                   },
                   "minEV": {
                     "type": "number",
