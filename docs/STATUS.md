@@ -27,6 +27,6 @@ It uses one synthetic bet and deliberately reports an insufficient-sample caveat
 
 ## Next evidence gates
 
-1. Compare each source independently with Brier score, log loss, and calibration buckets — no composite blend. `evaluateRatingSources` scores each of the four sources (Massey, Sagarin, Sasser, tennis Elo) on its own.
+1. Compare each source independently with Brier score, log loss, and calibration buckets — no composite blend. `evaluateRatingSources` scores each source on its own (Massey's ratings table and its games board are two separate sources, plus Sagarin, Sasser, and tennis Elo).
 2. Run each source through the market-relative gate (`evaluateMarketRelative`) against the de-vigged closing line: report CLV, ROI, and drawdown alongside calibration on a chronological split, with sample and coverage shown before any score and `insufficient_sample` below the threshold. No external probability becomes a live weight until it beats the close out of sample.
 3. Track coverage, CLV, and ROI only where the ledger contains the required decision and closing prices.
