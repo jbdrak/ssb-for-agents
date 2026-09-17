@@ -626,7 +626,7 @@ node scripts/backtest.js --metrics data/snapshots.jsonl
 The pipeline (`daily-snapshot.js` → settle games → `resolve-outcomes.js` →
 `backtest.js --metrics`) is built and tested (full deterministic pipeline suite
 passes). What's missing: **real settled-results data**. The synthetic
-tier-validation run shows a TIER 1 hit rate of **51.4% over N=296 simulated
+tier-validation run shows a TIER 1 hit rate of **53.7% over N=873 simulated
 samples** — these validate the ranking engine, they do NOT prove profitability.
 
 > **Honesty:** tier/kaiCall/edge/screenScore are signal-quality ratings, not
