@@ -231,6 +231,48 @@ describe('formatScanDiagnostics', () => {
     );
     assert.ok(!lines.some((l) => /Unresolved/.test(l)), 'should not flag a complete-scan empty market as unresolved');
   });
+
+  it('names the date window and the rerun flag when rows exist outside it', () => {
+    // Regression: the default `today` window is empty late in the day while the
+    // next slate is full. Reporting `no_ranked_rows_scanned` with 0 scanned rows
+    // reads as "the feed has nothing" and hides the whole board.
+    const lines = formatScanDiagnostics({
+      mixedScan: false,
+      tennisFallbackApplied: false,
+      emptySlate: [
+        {
+          league: 'MLB',
+          market: 'Moneyline',
+          reason: 'outside_card_window',
+          cardWindow: 'today',
+          filteredRowCount: 18
+        },
+        {
+          league: 'MLB',
+          market: 'Total Runs',
+          reason: 'outside_card_window',
+          cardWindow: 'today',
+          filteredRowCount: 182
+        }
+      ]
+    });
+    assert.ok(
+      lines.some((l) => /No plays: MLB › Moneyline \(outside_card_window\)/.test(l)),
+      'should carry the window reason on the pair line'
+    );
+    const hint = lines.find((l) => l.includes('--card-window all'));
+    assert.ok(hint, 'should hint the flag that shows the out-of-window rows');
+    assert.ok(hint.includes('the today window'), 'should name the window it is empty for');
+    assert.ok(hint.includes('200 rows'), 'should sum the dropped-row counts');
+    assert.ok(hint.includes('the slate is not empty'), 'should say the slate is not empty');
+  });
+
+  it('says nothing about windows when no pair was dropped by the window', () => {
+    const lines = formatScanDiagnostics({
+      emptySlate: [{ league: 'NBA', market: 'Spread', reason: 'no_ranked_rows_scanned' }]
+    });
+    assert.ok(!lines.some((l) => l.includes('--card-window all')), 'should not hint widening for a windowless empty');
+  });
 });
 
 it('passes small unresolved lists through untouched', () => {

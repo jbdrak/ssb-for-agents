@@ -206,13 +206,18 @@ async function probeActivePairs(
         if (Array.isArray(probe?.result) && probe.result.length > 0) {
           activeLeagueMarketPairs.push({ league, market });
         } else {
+          const probeEmpty = probe?.resultMeta?.emptyState || null;
           emptySlate.push({
             league,
             market,
-            reason: probe?.resultMeta?.emptyState?.reason || 'no_ranked_rows_scanned',
-            scannedRowCount: probe?.resultMeta?.emptyState?.scannedRowCount || 0,
-            ...(probe?.resultMeta?.emptyState?.failureBreakdown
-              ? { failureBreakdown: probe.resultMeta.emptyState.failureBreakdown }
+            reason: probeEmpty?.reason || 'no_ranked_rows_scanned',
+            scannedRowCount: probeEmpty?.scannedRowCount || 0,
+            ...(probeEmpty?.failureBreakdown ? { failureBreakdown: probeEmpty.failureBreakdown } : {}),
+            // Rows that exist but fall outside the requested date window are
+            // not an empty slate; carry the window + drop count so the
+            // diagnostics can say so instead of implying a dead board.
+            ...(probeEmpty?.cardWindow
+              ? { cardWindow: probeEmpty.cardWindow, filteredRowCount: probeEmpty.filteredRowCount || 0 }
               : {})
           });
         }
@@ -323,13 +328,15 @@ async function runOneHydratedPair(
       }
     }
     if (!candidates.length) {
+      const spEmpty = spResult.resultMeta?.emptyState || null;
       emptySlate.push({
         league,
         market,
-        reason: spResult.resultMeta?.emptyState?.reason || 'no_ranked_rows_scanned',
-        scannedRowCount: spResult.resultMeta?.emptyState?.scannedRowCount || 0,
-        ...(spResult.resultMeta?.emptyState?.failureBreakdown
-          ? { failureBreakdown: spResult.resultMeta.emptyState.failureBreakdown }
+        reason: spEmpty?.reason || 'no_ranked_rows_scanned',
+        scannedRowCount: spEmpty?.scannedRowCount || 0,
+        ...(spEmpty?.failureBreakdown ? { failureBreakdown: spEmpty.failureBreakdown } : {}),
+        ...(spEmpty?.cardWindow
+          ? { cardWindow: spEmpty.cardWindow, filteredRowCount: spEmpty.filteredRowCount || 0 }
           : {})
       });
       if (spResult.resultMeta?.scanHealth || spResult.resultMeta?.preHistoryShortlist) {

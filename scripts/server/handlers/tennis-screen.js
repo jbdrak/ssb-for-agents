@@ -128,6 +128,14 @@ function createTennisScreenHandler(client, { responseCache, responseCacheTtlMs, 
         league: 'Tennis',
         focusBook: preferredBook,
         sharpOddsProvider: args.enableSharpOddsHistory === true ? getSharedSharpOddsProvider(ctx) : null,
+        // Tennis start times must be corrected BEFORE the shared builder's
+        // card-window filter. PP's raw gameId timestamp is stale (commonly a
+        // full day off), so a `today` window applied to the raw value serves
+        // next-day matches while row-filtering the games that are actually
+        // upcoming. Cache + ESPN only here (skipUnmatched): the expensive
+        // per-match web resolver still runs later on the survivors via
+        // enrichTennisEvCandidates.
+        startTimeNormalizer: (rows) => correctTennisTimes(rows, { skipUnmatched: true }),
         rankRows: (hydratedRows, { debug: rankDebug } = {}) =>
           rankTennisScreenRows(hydratedRows, {
             limit: getLimit(args),
@@ -139,9 +147,6 @@ function createTennisScreenHandler(client, { responseCache, responseCacheTtlMs, 
             playableOnly: args.playableOnly === true
           })
       });
-      if (screenResult?.result) {
-        await correctTennisTimes(screenResult.result);
-      }
       if (marketResolution.aliasesUsed.length) {
         screenResult.resultMeta = {
           ...screenResult.resultMeta,

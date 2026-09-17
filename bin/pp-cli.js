@@ -17,7 +17,6 @@ const { recoverTennisFromScreen } = require(PROJECT + '/lib/tennis-fallback');
 const { loadLedger, saveLedger, addRecord, defaultLedgerPath } = require(PROJECT + '/lib/record-ledger');
 const { normalizeScanCandidates, buildScanFingerprint } = require(PROJECT + '/lib/record-candidates');
 const { promoteCards } = require(PROJECT + '/lib/record-card');
-const { enrichScanPolyWallets } = require(PROJECT + '/lib/ssb-poly-wallets');
 const { analyzeWalletPlays } = require(PROJECT + '/lib/ssb-wallet-plays');
 const { formatScanDiagnostics, normalizeWatchCandidates, summarizeUnresolvedCandidates } = require(
   PROJECT + '/lib/scan-diagnostics'
@@ -26,12 +25,15 @@ const { getMarketsForSport } = require(PROJECT + '/lib/ssb-market-registry');
 const { formatEventLabel } = require(PROJECT + '/lib/soccer-event-identity');
 const { verifyVenueOrder } = require(PROJECT + '/lib/ssb-venue-order');
 const { resolveScanLimit } = require(PROJECT + '/lib/ssb-scan-limit');
+const { runScanWithWindowWiden, scanWindowLabel } = require(PROJECT + '/lib/ssb-scan-card-window');
 const { correctTennisTimes } = require(PROJECT + '/lib/ssb-tennis');
 const { extractEventLinkRows, groupEventLinks } = require(PROJECT + '/lib/ssb-event-links');
 const { listSnapshots, loadSnapshot, loadSnapshotAt, listSnapshotHistory, historyStamp } = require(
   PROJECT + '/lib/ssb-ratings-snapshot'
 );
-const { applyRatingsOverlay } = require(PROJECT + '/lib/ssb-ratings-overlay');
+const { applyScanWalletOverlay, ratingsOverlayEnabled, applyScanRatingsOverlay } = require(
+  PROJECT + '/lib/ssb-scan-overlays'
+);
 const { buildRatingEvaluationRows } = require(PROJECT + '/lib/ssb-ratings-evaluation-bridge');
 const { evaluateRatingSources, evaluateMarketRelative } = require(PROJECT + '/lib/ssb-external-ratings-evaluation');
 const reviewRecord = require(PROJECT + '/scripts/review-record');
@@ -225,7 +227,10 @@ Flags:
                             adverse candidates are dropped before the filter runs,
                             so use rank <league> --all-markets for the adverse board.
   -n, --limit <N>           Max results. Default: 50
-  --card-window <today|next|all>  Date window. Default: today (local timezone)
+  --card-window <today|next|all>  Date window. Default: today (local timezone);
+                            when the default window yields no plays the scan
+                            re-runs once over all upcoming games and says so.
+                            Pass the window explicitly to disable that.
   --sort <field>            Sort by: start, edge, tier, clv, momentum. Default: start
   --asc                     Sort ascending (default: descending)
   -j, --json                Raw JSON output
@@ -1108,7 +1113,10 @@ async function applyTennisScanFallback({
   return res;
 }
 
-function renderScanOutput(res, { flags, leagues, marketList, book, targetTiers, cardWindow, limit }) {
+function renderScanOutput(
+  res,
+  { flags, leagues, marketList, book, targetTiers, cardWindow, autoWidenedFrom = null, limit }
+) {
   const jsonOut = flags.j || flags.json || false;
   const results = res.data?.results || res.results || [];
   const scanHealth = res.data?.scanHealth || res.scanHealth || null;
@@ -1186,7 +1194,7 @@ function renderScanOutput(res, { flags, leagues, marketList, book, targetTiers, 
       return '';
     }
   };
-  const windowLabel = cardWindow === 'today' ? 'Today' : cardWindow === 'next' ? 'Next day' : 'All upcoming';
+  const windowLabel = scanWindowLabel({ cardWindow, autoWidenedFrom });
   let rangeHeader = '';
   if (allStarts.length) {
     const earliest = Math.min(...allStarts);
@@ -1196,6 +1204,14 @@ function renderScanOutput(res, { flags, leagues, marketList, book, targetTiers, 
         ? `${windowLabel}: ${fmtDateTime(earliest)}`
         : `${windowLabel}: ${fmtDateTime(earliest)} → ${fmtDateTime(latest)}`;
   }
+  const hasScanMeta = Boolean(
+    scanHealth ||
+    watchCandidates ||
+    unresolvedCandidates ||
+    emptySlate?.length ||
+    tennisFallbackApplied ||
+    autoWidenedFrom
+  );
   if (jsonOut) {
     const output = {
       results,
@@ -1206,17 +1222,12 @@ function renderScanOutput(res, { flags, leagues, marketList, book, targetTiers, 
       // shipping megabytes of identical failure reasons.
       ...(unresolvedCandidates ? { unresolvedCandidates: summarizeUnresolvedCandidates(unresolvedCandidates) } : {}),
       ...(emptySlate && emptySlate.length ? { emptySlate } : {}),
-      ...(tennisFallbackApplied ? { tennisFallbackApplied } : {})
+      ...(tennisFallbackApplied ? { tennisFallbackApplied } : {}),
+      // Set when the default date window came back empty and the scan was
+      // re-run over all upcoming rows (see the auto-widen block in cmdScan).
+      ...(autoWidenedFrom ? { cardWindowAutoWidenedFrom: autoWidenedFrom } : {})
     };
-    console.log(
-      JSON.stringify(
-        scanHealth || watchCandidates || unresolvedCandidates || emptySlate?.length || tennisFallbackApplied
-          ? output
-          : results,
-        null,
-        2
-      )
-    );
+    console.log(JSON.stringify(hasScanMeta ? output : results, null, 2));
   } else {
     if (watchCandidates?.length) {
       console.error(
@@ -1232,92 +1243,6 @@ function renderScanOutput(res, { flags, leagues, marketList, book, targetTiers, 
     console.log(formatScan(results));
     const total = results.reduce((s, r) => s + (r.plays || []).length, 0);
     console.log('\n' + total + ' plays across ' + results.length + ' markets');
-  }
-}
-
-async function applyScanWalletOverlay(res, flags) {
-  if ((flags.wallets || flags['wallets']) && !(flags['no-wallets'] || flags.noWallets)) {
-    try {
-      const results = res.data?.results || res.results || [];
-      const wantCount = flags.wallets === true ? undefined : Number(flags.wallets);
-      await enrichScanPolyWallets(results, { limit: Number.isFinite(wantCount) && wantCount > 0 ? wantCount : 20 });
-      const health = res.data?.scanHealth || res.scanHealth || null;
-      if (health && (health.truncated || health.incomplete)) {
-        console.error(
-          'note: scan truncated — Polymarket wallet overlay may miss some matchups (run `pp wallets` for the wallet-first view).'
-        );
-      }
-    } catch {
-      // Enrichment must never break scan output.
-    }
-  }
-}
-
-// ── external-ratings shadow overlay (default ON) ─────────────────
-// External-ratings benchmark records are a SHADOW label: they attach
-// to final candidate rows as `row.ratings` for later evaluation and never feed
-// the ranker, tiers, verdicts, or edge. ON by default so every scan carries the
-// context; the store read is cheap and any failure degrades to a silent no-op.
-// Disable with --no-ratings-overlay (or SSB_RATINGS_OVERLAY=false).
-
-/** True when the caller asked for the external-ratings shadow overlay. */
-function ratingsOverlayEnabled(flags = {}) {
-  if (flags['no-ratings-overlay'] || flags.noRatingsOverlay) return false;
-  if (flags['ratings-overlay'] || flags.ratingsOverlay) return true;
-  // Default ON. Only the exact string 'false' turns it off via the env, so a
-  // set-but-typo'd value cannot silently change what a scan emits.
-  return process.env.SSB_RATINGS_OVERLAY !== 'false';
-}
-
-/**
- * Read every record in the external-ratings snapshot store
- * (lib/ssb-ratings-snapshot.js). Fails closed per file: an unreadable,
- * invalid, or stale snapshot contributes nothing rather than throwing.
- *
- * This aggregate load deliberately supplies no point-in-time cutoff: it runs
- * once for the whole slate, not per row, so it has no event to compare against
- * and the store's `stale` flag stays inert here. Recency is enforced where the
- * event IS known - per row, at the join, in `applyRatingsOverlay`
- * (lib/ssb-ratings-overlay.js) against each row's own event start. Do not arm a
- * cutoff here instead: one slate-wide date cannot say whether a snapshot
- * describes any particular game.
- *
- * @returns {Array<Record<string, any>>}
- */
-function loadRatingsRecords() {
-  const listed = listSnapshots();
-  if (!listed.ok) return [];
-  const records = [];
-  for (const summary of listed.snapshots) {
-    if (!summary.valid) continue;
-    const loaded = loadSnapshot(summary.source, summary.league, summary.season);
-    if (!loaded.ok || loaded.stale || !loaded.snapshot) continue;
-    for (const record of loaded.snapshot.records) records.push(record);
-  }
-  return records;
-}
-
-/**
- * Attach external-ratings benchmark records to the final scan rows in place.
- * Pure enrichment: it only ADDS `row.ratings` and can never change a ranking,
- * tier, verdict, edge, or score. Default ON — when disabled with
- * --no-ratings-overlay it returns before touching the snapshot store, so a
- * disabled scan pays nothing. A read failure
- * degrades to a silent no-op; enrichment must never break scan output.
- *
- * @param {Object} res - scan response ({ data: { results } } or { results })
- * @param {Object} [flags]
- * @returns {{applied: boolean, records: number}}
- */
-async function applyScanRatingsOverlay(res, flags = {}) {
-  if (!ratingsOverlayEnabled(flags)) return { applied: false, records: 0 };
-  try {
-    const results = res?.data?.results || res?.results || [];
-    const records = loadRatingsRecords();
-    applyRatingsOverlay(results, { ratings: records });
-    return { applied: true, records: records.length };
-  } catch {
-    return { applied: false, records: 0 };
   }
 }
 
@@ -1410,8 +1335,11 @@ async function cmdScan(handlers, positional, flags, client) {
     process.stderr.write('\r' + ' '.repeat(20) + '\rScanning... ' + elapsed + 's');
   }, 10000);
 
-  try {
-    const res = await handlers.quick_screen({
+  // Date-window auto-widen (see lib/ssb-scan-card-window.js): an empty default
+  // window means the next slate is out of range, not that the board is dead.
+  const windowWasExplicit = Boolean(flags['card-window'] || flags.cardWindow);
+  const scanWithWindow = (window) =>
+    handlers.quick_screen({
       leagues,
       markets: marketList,
       books: [book],
@@ -1423,7 +1351,7 @@ async function cmdScan(handlers, positional, flags, client) {
       sortBy: resolvedSortBy,
       sortDir: resolvedSortDir,
       limit,
-      cardWindow: cardWindow || undefined,
+      cardWindow: window || undefined,
       scanLimit:
         Number.isFinite(Number(flags['scan-limit'] || flags.scanLimit)) &&
         Number(flags['scan-limit'] || flags.scanLimit) > 0
@@ -1435,6 +1363,13 @@ async function cmdScan(handlers, positional, flags, client) {
       validateTop: validateAll ? undefined : 10,
       includeResearch: false,
       ...(ncaafOnly ? { preHistoryGameBudget: 80, preHistoryRowBudget: 80 } : {})
+    });
+
+  try {
+    const { res, effectiveCardWindow, autoWidenedFrom } = await runScanWithWindowWiden({
+      cardWindow,
+      windowWasExplicit,
+      run: scanWithWindow
     });
     clearInterval(spinner);
     process.stderr.write('\r' + ' '.repeat(30) + '\r');
@@ -1475,7 +1410,16 @@ async function cmdScan(handlers, positional, flags, client) {
     await applyScanRatingsOverlay(res, flags);
     phaseMark = logPhase('scan.ratings_overlay', phaseMark);
 
-    renderScanOutput(res, { flags, leagues, marketList, book, targetTiers, cardWindow, limit });
+    renderScanOutput(res, {
+      flags,
+      leagues,
+      marketList,
+      book,
+      targetTiers,
+      cardWindow: effectiveCardWindow,
+      autoWidenedFrom,
+      limit
+    });
     logPhase('scan.render', phaseMark);
     logPhase('scan.total', startTime);
   } catch (e) {
