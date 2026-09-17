@@ -16,6 +16,8 @@ const { parseGameStartMs, americanOddsToImpliedProbability } = require(PROJECT +
 const { recoverTennisFromScreen } = require(PROJECT + '/lib/tennis-fallback');
 const { loadLedger, saveLedger, addRecord, defaultLedgerPath } = require(PROJECT + '/lib/record-ledger');
 const { normalizeScanCandidates, buildScanFingerprint } = require(PROJECT + '/lib/record-candidates');
+const { cardGateReport, DEFAULT_MAX_BETS, DEFAULT_MIN_EV_PCT } = require(PROJECT + '/lib/card-gate');
+const { evaluateLedger } = require(PROJECT + '/lib/record-metrics');
 const { promoteCards } = require(PROJECT + '/lib/record-card');
 const { analyzeWalletPlays } = require(PROJECT + '/lib/ssb-wallet-plays');
 const { formatScanDiagnostics, normalizeWatchCandidates, summarizeUnresolvedCandidates } = require(
@@ -204,7 +206,8 @@ Commands:
   prices     Compare prices across books
   links      Get sportsbook event links from PP
   rank       Ranked plays for a league
-  card       Today's bet slip (BETs across all markets, kickoff-sorted)
+  card       Today's bet slip — BETs that clear the price gate, kickoff-sorted
+             (--max-bets N cap, --min-ev PCT floor, --no-gate to disable)
   wallets    Top Polymarket wallets vs a book (bet/pass)
   fantasy    Fantasy optimizer props
   health     Auth + backend health check
@@ -1931,28 +1934,21 @@ async function cmdCard(handlers, positional, flags) {
   const gameCounts = new Map();
   for (const r of card) gameCounts.set(r.gameId || r.game, (gameCounts.get(r.gameId || r.game) || 0) + 1);
 
-  if (jsonOut) {
-    console.log(JSON.stringify({ league, book, card, considerCount, startedDropped: startedCount }, null, 2));
-    return;
-  }
-  if (!card.length) {
-    console.log(`No BETs on today's ${league} card (${considerCount} CONSIDERs, ${startedCount} already started).`);
-    return;
-  }
-  console.log(B + `${league} card` + R + ` — ${card.length} BET${card.length === 1 ? '' : 's'} on ${book}`);
-  card.forEach((r, idx) => {
-    const oddsStr = r.odds > 0 ? '+' + r.odds : String(r.odds);
-    const when =
-      r.startsIn === 'LIVE' || r.isLive ? RED + 'LIVE' + R : [r.startCT, r.startsIn].filter(Boolean).join(', ');
-    const liq = r.liquidityFlag === 'thin' ? ' ' + RED + '[thin liq]' + R : '';
-    const sameGame = (gameCounts.get(r.gameId || r.game) || 0) > 1 ? '  (same game as below)' : '';
-    console.log(
-      `  ${idx + 1}. ${r.selection} @ ${oddsStr}  [${r.market}]  (${when})${liq}${sameGame}\n` +
-        `     ${r.game || ''}  |  mv ${r.movementDisposition || '?'}  |  books ${r.consensusBookCount ?? '?'}`
-    );
+  // Price gate + volume cap. Without this the card is every row whose movement
+  // label says BET, at whatever price the market offers — which is how a
+  // 13-play card of -133/-135 coin flips happens.
+  const maxBets = Number.isFinite(Number(flags['max-bets'])) ? Number(flags['max-bets']) : DEFAULT_MAX_BETS;
+  const minEvPct = Number.isFinite(Number(flags['min-ev'])) ? Number(flags['min-ev']) : DEFAULT_MIN_EV_PCT;
+  const loaded = flags['no-gate'] === undefined ? loadLedger() : null;
+  const report = cardGateReport(card, {
+    gateEnabled: flags['no-gate'] === undefined,
+    maxBets,
+    minEvPct,
+    evaluation: loaded && loaded.ok ? evaluateLedger(loaded.ledger) : null,
+    context: { league, book, considerCount, startedCount, jsonOut, gameCounts, style: { bold: B, red: RED, reset: R } }
   });
-  if (considerCount) console.error(`${considerCount} CONSIDERs left off — use pp rank to see them.`);
-  if (startedCount) console.error(`${startedCount} BETs already started, dropped.`);
+  console.log(report.text);
+  if (!jsonOut) for (const note of report.notes) console.error('  ' + note);
 }
 
 /** Render the grouped, per-game rank view for a single or merged response. */

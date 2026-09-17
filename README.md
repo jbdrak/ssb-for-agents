@@ -239,9 +239,66 @@ pp record stats    --date 2026-08-04 --json
 pp record review   --date 2026-08-04
 pp record pending  --date 2026-08-04
 
-# 4. Settle official bets against supplied authoritative results
-node scripts/settle-record.js --results results.json --date 2026-08-04 --dry-run
+# 4. Capture the CLOSING price for candidates near their start (bounded, single pass)
+node scripts/capture-close.js --live --window 30        # or: npm run capture:close -- --live
+node scripts/capture-close.js --prices closes.json      # deterministic path, no network
+node scripts/capture-close.js --audit                   # report record usability, capture nothing
+
+# 5. Fetch real result data and settle the official bets against it
+node scripts/fetch-results.js --date 2026-09-17 --leagues MLB,WNBA --out results.json
+python3 scripts/flashscore-results.py --days 1 --out fs.json   # tennis (same-day only)
+node scripts/fetch-results.js --date 2026-09-17 --flashscore fs.json --out tennis.json
+node scripts/settle-record.js --results results.json --date 2026-09-17 --dry-run
+
+# 6. Evaluate — hit rate with a confidence interval, ROI, and beat-the-close
+npm run evaluate                       # or: node scripts/evaluate.js --json
 ```
+
+### Evaluating a record, and what "no result" looks like
+
+`npm run evaluate` answers two questions separately and refuses to blur them:
+
+- **Did we win?** Hit rate with a 95% Wilson interval, stake-weighted ROI, split by
+  tier / market / league / price bucket. Every bucket prints its sample size, and a
+  bucket under 30 decided outcomes is flagged `insufficientSample` rather than shown
+  as a result.
+- **Did we beat the close?** Measured over recorded CANDIDATES, not just bets, so it
+  uses the whole scan. This is the leading indicator: it needs far fewer observations
+  than win rate before it means anything.
+
+Two things it will not do. It never reports a 0 mean CLV when no close has been
+captured — it reports `unmeasured`, because "we never looked" and "we broke even
+against the close" are different claims. And it never counts a row whose price is a
+probability display string (`'49.0%'`) into ROI; those are counted separately as
+`unpricedRows`. On an empty ledger it says insufficient sample for everything instead
+of printing zeros that read like results.
+
+### The card gate
+
+`pp card` now applies a price test and a volume cap (`--max-bets`, default 2;
+`--min-ev`, default 2%; `--no-gate` to disable). A row is only a BET if the price
+returns positive EV against the decision-time de-vigged fair probability, or beats the
+sharp consensus edge by the same margin. A row with neither has no price evidence and
+becomes a LEAN. Anything from a bucket with fewer than 30 decided bets is labelled
+`UNPROVEN`, and `No plays on today's <league> card — all N BET(s) failed the price gate`
+is a legitimate, expected output.
+
+The reason is arithmetic: a -135 price needs 57.1% to break even, and the repo's own
+docs score the tier that produced most of these plays at ~50-54% on outcomes. Movement
+alone is a hypothesis, not a price argument — the close is what tests it.
+
+### The close is not the decision price
+
+The ledger records a candidate's `odds` at DECISION time — the price when the scan
+ran. Closing line value is a comparison against the CLOSE, and `capture-close.js` is
+the only producer of one; before it existed there was no close anywhere in the repo,
+so every printed "CLV" was an open-to-current move rather than a close-relative
+number. Two things about the close record are deliberate:
+
+- **`closeIsPrice` is the load-bearing field.** For a NoVig-family book the structured `odds` field in the scan payload is a display string (`'49.0%'`), not a price — `lib/ssb-formatter.js` overwrites it via `oddsValueForDisplay`. A close that arrives in that shape is stored as `closeImpliedProbability` with `closeIsPrice: false` and `closeOdds: null`. It is never converted into an American price, because turning a one-sided implied probability into a price means inventing a de-vig.
+- **`closeKind` is `'pregame'` or `'post_start'`.** A quote taken inside the post-start grace window is not a close, so it is labelled rather than silently treated as one.
+- **A `candidateId` is never recomputed.** It is the decision-time identity `pp record-card` joins on; rehashing a row after adding a close would orphan every bet linked to it.
+- **`--audit` reports, and never repairs.** It counts unusable rows by reason (`probability_not_price`, `missing_game_id`, `missing_start`, `missing_fair_probability`, `missing_capture_time`) so the gaps are visible instead of assumed absent.
 
 Key properties:
 

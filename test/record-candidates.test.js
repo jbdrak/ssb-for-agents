@@ -163,6 +163,8 @@ describe('normalizeScanCandidates', () => {
     assert.deepEqual(Object.keys(out[0]).sort(), [
       'books',
       'candidateId',
+      'closeOdds',
+      'clvPct',
       'clvProxyPct',
       'consensusBookCount',
       'edge',
@@ -174,6 +176,7 @@ describe('normalizeScanCandidates', () => {
       'movement',
       'movementDisposition',
       'odds',
+      'openToCurrentPct',
       'scanId',
       'selection',
       'start',

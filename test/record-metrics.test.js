@@ -1,0 +1,236 @@
+'use strict';
+
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+
+const metrics = require('../lib/record-metrics');
+
+describe('record-metrics: Wilson interval', () => {
+  it('is null with no observations', () => {
+    assert.equal(metrics.wilsonInterval(0, 0), null);
+    assert.equal(metrics.wilsonInterval(3, NaN), null);
+  });
+
+  it('brackets the point estimate and stays inside [0, 1]', () => {
+    const ci = metrics.wilsonInterval(30, 50);
+    assert.ok(ci.low < 0.6 && ci.high > 0.6);
+    assert.ok(ci.low >= 0 && ci.high <= 1);
+  });
+
+  it('widens as the sample shrinks', () => {
+    const small = metrics.wilsonInterval(3, 5);
+    const large = metrics.wilsonInterval(300, 500);
+    assert.ok(small.high - small.low > large.high - large.low);
+  });
+
+  it('handles a perfect and an empty record without leaving [0, 1]', () => {
+    const perfect = metrics.wilsonInterval(10, 10);
+    assert.ok(perfect.low > 0.6 && perfect.high === 1);
+    const none = metrics.wilsonInterval(0, 10);
+    assert.equal(none.low, 0);
+  });
+});
+
+describe('record-metrics: profit units', () => {
+  it('prices a favourite, a dog, a loss and a push', () => {
+    assert.equal(Math.round(metrics.profitUnits({ odds: -110, stake: 1, outcome: 'win' }) * 1e4) / 1e4, 0.9091);
+    assert.equal(metrics.profitUnits({ odds: 150, stake: 1, outcome: 'win' }), 1.5);
+    assert.equal(metrics.profitUnits({ odds: -110, stake: 1, outcome: 'loss' }), -1);
+    assert.equal(metrics.profitUnits({ odds: -110, stake: 1, outcome: 'push' }), 0);
+  });
+
+  it('refuses a row whose price is not a price', () => {
+    assert.equal(metrics.profitUnits({ odds: '49.0%', stake: 1, outcome: 'win' }), null);
+    assert.equal(metrics.profitUnits({ odds: null, stake: 1, outcome: 'win' }), null);
+  });
+
+  it('refuses a row with no usable stake', () => {
+    assert.equal(metrics.profitUnits({ odds: -110, stake: 0, outcome: 'win' }), null);
+  });
+});
+
+describe('record-metrics: price buckets', () => {
+  it('separates a heavy favourite from a big underdog', () => {
+    assert.equal(metrics.oddsBucket(-250), 'heavy_favourite');
+    assert.equal(metrics.oddsBucket(-110), 'favourite');
+    assert.equal(metrics.oddsBucket(100), 'even');
+    assert.equal(metrics.oddsBucket(150), 'underdog');
+    assert.equal(metrics.oddsBucket(400), 'big_underdog');
+    assert.equal(metrics.oddsBucket('49.0%'), 'unpriced');
+  });
+});
+
+describe('record-metrics: summarise', () => {
+  it('reports hit rate with an interval, ROI, and flags a thin sample', () => {
+    const rows = [
+      { odds: -110, stake: 1, outcome: 'win' },
+      { odds: -110, stake: 1, outcome: 'loss' }
+    ];
+    const stats = metrics.summarise(rows);
+    assert.equal(stats.sample, 2);
+    assert.equal(stats.decided, 2);
+    assert.equal(stats.hitRate, 0.5);
+    assert.equal(stats.stakedUnits, 2);
+    assert.equal(stats.pnlUnits, -0.0909);
+    assert.equal(stats.insufficientSample, true);
+  });
+
+  it('never reports a 0 mean CLV when no close was ever captured', () => {
+    const stats = metrics.summarise([{ odds: -110, stake: 1, outcome: 'win' }]);
+    assert.equal(stats.meanClvPct, null);
+    assert.equal(stats.clvSample, 0);
+  });
+
+  it('averages only the rows that actually carry a close', () => {
+    const stats = metrics.summarise([
+      { odds: -110, stake: 1, outcome: 'win', clvPct: 2 },
+      { odds: -110, stake: 1, outcome: 'loss', clvPct: -1 },
+      { odds: -110, stake: 1, outcome: 'win', clvPct: null }
+    ]);
+    assert.equal(stats.clvSample, 2);
+    assert.equal(stats.meanClvPct, 0.5);
+  });
+
+  it('excludes an unpriced row from ROI instead of counting it as zero', () => {
+    const stats = metrics.summarise([
+      { odds: '49.0%', stake: 1, outcome: 'win' },
+      { odds: -100, stake: 1, outcome: 'win' }
+    ]);
+    assert.equal(stats.unpricedRows, 1);
+    assert.equal(stats.stakedUnits, 1);
+    assert.equal(stats.roiPct, 100);
+  });
+
+  it('has no hit rate when nothing has been decided', () => {
+    const stats = metrics.summarise([{ odds: -110, stake: 1, outcome: 'push' }]);
+    assert.equal(stats.hitRate, null);
+    assert.equal(stats.hitRateCi, null);
+    assert.equal(stats.insufficientSample, true);
+  });
+});
+
+describe('record-metrics: beat the close', () => {
+  const ledger = {
+    candidates: [
+      {
+        candidateId: 'a',
+        tier: 'TIER 1',
+        market: 'Moneyline',
+        league: 'MLB',
+        closeBook: 'NoVigApp',
+        odds: -127,
+        closeOdds: -118,
+        clvPct: 1.8
+      },
+      {
+        candidateId: 'b',
+        tier: 'TIER 1',
+        market: 'Moneyline',
+        league: 'MLB',
+        closeBook: 'NoVigApp',
+        odds: -110,
+        closeOdds: -125,
+        clvPct: -2.4
+      },
+      {
+        candidateId: 'c',
+        tier: 'TIER 2',
+        market: 'Total Runs',
+        league: 'MLB',
+        closeBook: 'NoVigApp',
+        odds: -105,
+        closeOdds: -100,
+        clvPct: 1.1
+      },
+      { candidateId: 'd', tier: 'TIER 2', market: 'Total Runs', league: 'MLB' },
+      {
+        candidateId: 'e',
+        tier: 'TIER 3',
+        market: 'Total Runs',
+        league: 'MLB',
+        closeImpliedProbability: 0.5,
+        clvReason: 'decision_price_not_a_price'
+      }
+    ]
+  };
+
+  it('counts only rows that have both a close and a computable CLV', () => {
+    const report = metrics.beatTheCloseReport(ledger);
+    assert.equal(report.candidates, 5);
+    assert.equal(report.withoutClose, 1);
+    assert.equal(report.withCloseNoPrice, 1);
+    assert.equal(report.sample, 3);
+    assert.equal(report.beat, 2);
+    assert.ok(Math.abs(report.rate - 0.6667) < 0.001);
+    assert.ok(report.rateCi.low < report.rate && report.rateCi.high > report.rate);
+  });
+
+  it('splits by tier with a sample size on every bucket', () => {
+    const report = metrics.beatTheCloseReport(ledger);
+    assert.equal(report.byTier['TIER 1'].sample, 2);
+    assert.equal(report.byTier['TIER 1'].beat, 1);
+    assert.equal(report.byTier['TIER 2'].sample, 1);
+    assert.equal(report.byTier['TIER 2'].insufficientSample, true);
+    assert.ok(report.byTier['TIER 1'].meanClvPct != null);
+  });
+
+  it('is null, not zero, when nothing has a close', () => {
+    const empty = metrics.beatTheCloseReport({ candidates: [{ candidateId: 'x' }] });
+    assert.equal(empty.sample, 0);
+    assert.equal(empty.rate, null);
+    assert.equal(empty.meanClvPct, null);
+    assert.equal(empty.insufficientSample, true);
+  });
+});
+
+describe('record-metrics: settled rows and the full document', () => {
+  it('joins the latest settlement per bet and takes CLV from the candidate', () => {
+    const ledger = {
+      candidates: [{ candidateId: 'a', tier: 'TIER 1', market: 'Moneyline', league: 'MLB', clvPct: 1.8 }],
+      bets: [
+        {
+          id: 'bet-1',
+          candidateId: 'a',
+          market: 'Moneyline',
+          league: 'MLB',
+          oddsAtDecision: -127,
+          stake: 2,
+          status: 'pending'
+        }
+      ],
+      settlements: [
+        { betId: 'bet-1', status: 'loss', settledAt: '2026-09-17T20:00:00.000Z' },
+        { betId: 'bet-1', status: 'win', settledAt: '2026-09-17T21:00:00.000Z' }
+      ]
+    };
+    const rows = metrics.settledRows(ledger);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].outcome, 'win');
+    assert.equal(rows[0].tier, 'TIER 1');
+    assert.equal(rows[0].clvPct, 1.8);
+  });
+
+  it('ignores a bet that is not settled', () => {
+    const ledger = { candidates: [], bets: [{ id: 'b', status: 'pending' }], settlements: [] };
+    assert.equal(metrics.settledRows(ledger).length, 0);
+  });
+
+  it('produces a full document on an empty ledger without inventing results', () => {
+    const document = metrics.evaluateLedger({ version: 2, scans: [], candidates: [], bets: [], settlements: [] });
+    assert.equal(document.overall.sample, 0);
+    assert.equal(document.overall.hitRate, null);
+    assert.equal(document.overall.roiPct, null);
+    assert.equal(document.overall.insufficientSample, true);
+    assert.equal(document.beatTheClose.sample, 0);
+    assert.equal(document.minSample, 30);
+  });
+
+  it('honours a custom trust floor', () => {
+    const ledger = {
+      candidates: [],
+      bets: [{ id: 'b1', status: 'win', oddsAtDecision: -110, stake: 1 }],
+      settlements: []
+    };
+    assert.equal(metrics.evaluateLedger(ledger, { minSample: 1 }).overall.insufficientSample, false);
+  });
+});

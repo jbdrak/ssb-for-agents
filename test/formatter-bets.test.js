@@ -120,9 +120,18 @@ describe('formatBetCompact', () => {
     assert.equal(result.risk, undefined);
   });
 
-  it('shows NoVig prices as percentages while keeping other books in American odds', () => {
-    assert.equal(formatBetCompact({ selection: 'NoVig Pick', odds: -141, book: 'NoVigApp' }).odds, '58.5%');
-    assert.equal(formatBetCompact({ selection: 'FanDuel Pick', odds: -141, book: 'FanDuel' }).odds, -141);
+  it('keeps every price numeric and carries the NoVig probability in oddsDisplay', () => {
+    // A structured payload must never put a display string where a consumer
+    // reads a price: `--record-scan` writes this field into the ledger, and 64
+    // of 90 recorded decision prices were unusable precisely because a
+    // probability string sat in it.
+    const noVig = formatBetCompact({ selection: 'NoVig Pick', odds: -141, book: 'NoVigApp' });
+    assert.equal(noVig.odds, -141);
+    assert.equal(noVig.oddsDisplay, '58.5%');
+
+    const other = formatBetCompact({ selection: 'FanDuel Pick', odds: -141, book: 'FanDuel' });
+    assert.equal(other.odds, -141);
+    assert.equal(other.oddsDisplay, '-141');
   });
 
   it('carries the machine-readable start alongside the startCST display string', () => {
@@ -516,13 +525,14 @@ describe('formatQuickScreenBets', () => {
     assert.equal(out.results[0].plays[0].risk, undefined);
   });
 
-  it('formats the default NoVig target-book response with percentage prices', () => {
+  it('keeps the structured price numeric and the NoVig percentage in oddsDisplay', () => {
     const out = formatQuickScreenBets({
       ...sampleResponse,
       targetBook: 'NoVigApp',
       targetBooks: ['NoVigApp']
     });
-    assert.equal(out.results[0].plays[0].odds, '52.4%');
+    assert.equal(out.results[0].plays[0].odds, -110);
+    assert.equal(out.results[0].plays[0].oddsDisplay, '52.4%');
     assert.ok(out.summary.includes('Lakers ML at 52.4%'));
   });
 
