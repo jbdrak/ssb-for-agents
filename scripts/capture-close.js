@@ -100,30 +100,48 @@ function quotesFromFile(file) {
 async function defaultGetPrices(targets, ctx = {}) {
   const { createMcpHandlers } = require('./server/handlers');
   const { createSSBClient } = require('../lib/ssb-api');
+  const { gameIdFromPlayId } = require('../lib/record-candidates');
   const handlers = createMcpHandlers({ client: createSSBClient() });
   const quotes = new Map();
   for (const target of targets) {
     const candidate = target.candidate;
+    // `validate_play` REQUIRES a gameId ("gameId is required"), and a recorded
+    // candidate resolves one from its playId because the scan row carries
+    // playId and not gameId. Without this the whole live path silently resolved
+    // nothing.
+    const gameId = candidate.gameId || gameIdFromPlayId(candidate.playId);
+    if (!gameId) {
+      ctx.recordFailure?.(candidate.candidateId, 'no_game_id');
+      continue;
+    }
     try {
       const res = await handlers.validate_play({
         league: candidate.league,
         market: candidate.market,
-        gameId: candidate.gameId || undefined,
+        gameId,
+        playId: candidate.playId || undefined,
         selection: candidate.selection,
         book: ctx.book || undefined
       });
       const data = (res && res.data) || res || {};
+      if (res && res.ok === false) {
+        // Surface the vendor's own reason rather than a generic failure.
+        ctx.recordFailure?.(candidate.candidateId, (data.error && data.error.message) || 'validate_failed');
+        continue;
+      }
       const play = data.play || {};
       const odds = play.odds ?? play.currentOdds ?? null;
-      if (odds == null) continue;
+      if (odds == null) {
+        ctx.recordFailure?.(candidate.candidateId, 'no_price_in_response');
+        continue;
+      }
       quotes.set(candidate.candidateId, {
         odds,
         fairProbability: play.marketFairProbability ?? null,
         book: play.book ?? ctx.book ?? null
       });
-    } catch {
-      // A failed lookup is reported as unresolved below, never as a close.
-      continue;
+    } catch (error) {
+      ctx.recordFailure?.(candidate.candidateId, error && error.message ? error.message : 'lookup_threw');
     }
   }
   return quotes;
@@ -188,16 +206,23 @@ async function captureClose(opts = {}) {
   }
 
   // Resolve quotes. Either an injected provider, a supplied quote set, or the
-  // live default (which needs an explicit --live acknowledgment).
+  // live default (which needs an explicit --live acknowledgment). A provider
+  // records WHY a lookup failed so an unresolved row is diagnosable rather than
+  // just absent.
+  const providerFailures = new Map();
+  const providerCtx = {
+    book: opts.book,
+    recordFailure: (candidateId, reason) => providerFailures.set(candidateId, reason)
+  };
   let quotes;
   if (typeof opts.getPrices === 'function') {
-    quotes = await opts.getPrices(selection.targets, { book: opts.book });
+    quotes = await opts.getPrices(selection.targets, providerCtx);
   } else if (typeof opts.quotes === 'function') {
     const supplied = opts.quotes();
     if (!supplied.ok) return { ok: false, error: supplied.error, ledgerPath };
     quotes = new Map(supplied.quotes.map((quote) => [quote.candidateId, quote]));
   } else if (opts.live) {
-    quotes = await defaultGetPrices(selection.targets, { book: opts.book });
+    quotes = await defaultGetPrices(selection.targets, providerCtx);
   } else {
     throw new Error(
       'manual-only: no quote source supplied — pass --prices <file> or --live to acknowledge live SSB endpoints'
@@ -211,7 +236,11 @@ async function captureClose(opts = {}) {
   for (const target of selection.targets) {
     const quote = quotes.get(target.candidate.candidateId);
     if (!quote) {
-      unresolved.push({ candidateId: target.candidate.candidateId, game: target.candidate.game, reason: 'no_quote' });
+      unresolved.push({
+        candidateId: target.candidate.candidateId,
+        game: target.candidate.game,
+        reason: providerFailures.get(target.candidate.candidateId) || 'no_quote'
+      });
       continue;
     }
     const applied = applyClose(target, quote, { capturedAt });
