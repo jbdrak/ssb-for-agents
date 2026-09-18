@@ -250,3 +250,42 @@ describe('capture-close: pass behaviour', () => {
     assert.equal(result.targets, 0);
   });
 });
+
+describe('capture-close: quiet mode for a frequent schedule', () => {
+  const { execFileSync } = require('node:child_process');
+  const SCRIPT = path.join(__dirname, '..', 'scripts', 'capture-close.js');
+
+  function runCli(extraArgs) {
+    // A candidate starting in 5 hours: nothing is due, so the run short-circuits
+    // before it needs any quote source. No network, no ledger writes.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quiet-'));
+    const ledgerPath = path.join(dir, 'ledger.json');
+    fs.writeFileSync(
+      ledgerPath,
+      JSON.stringify(
+        {
+          version: 2,
+          scans: [],
+          candidates: [candidate({ start: new Date(Date.now() + 5 * 3600 * 1000).toISOString() })],
+          bets: [],
+          settlements: []
+        },
+        null,
+        2
+      )
+    );
+    try {
+      return execFileSync('node', [SCRIPT, '--ledger', ledgerPath, ...extraArgs], { encoding: 'utf8' });
+    } catch (error) {
+      return String(error.stdout || '') + String(error.stderr || '');
+    }
+  }
+
+  it('says nothing when it captured nothing', () => {
+    assert.equal(runCli(['--quiet']).trim(), '');
+  });
+
+  it('still reports when quiet is not set', () => {
+    assert.match(runCli([]), /closes: 0 captured/);
+  });
+});
