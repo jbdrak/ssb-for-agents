@@ -326,6 +326,20 @@ function formatReport(result) {
   lines.push(
     `due: ${result.targets} | captured ${result.captured} | unresolved ${result.unresolved} | rejected ${result.rejected}`
   );
+  // Print WHY each lookup failed, grouped. A bare `unresolved 5` is undiagnosable —
+  // it reads the same whether the provider is down, the fixture identity is missing,
+  // or five games simply have no quote yet. The detail is already collected for the
+  // JSON output; the human report was dropping it.
+  if (result.unresolvedDetail && result.unresolvedDetail.length) {
+    const reasons = new Map();
+    for (const item of result.unresolvedDetail) {
+      const reason = String(item.reason || 'unknown');
+      reasons.set(reason, (reasons.get(reason) || 0) + 1);
+    }
+    for (const [reason, count] of [...reasons.entries()].sort((a, b) => b[1] - a[1])) {
+      lines.push(`  unresolved x${count}: ${reason}`);
+    }
+  }
   lines.push(`excluded: ${JSON.stringify(result.excluded)}`);
   if (result.dryRun) lines.push('dry run: ledger not written');
   return lines.join('\n');

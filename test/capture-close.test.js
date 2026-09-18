@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { captureClose, quotesFromFile, parseArgs } = require('../scripts/capture-close');
+const { captureClose, quotesFromFile, parseArgs, formatReport } = require('../scripts/capture-close');
 
 const NOW = new Date('2026-09-17T20:00:00.000Z');
 const at = (minutes) => new Date(NOW.getTime() + minutes * 60 * 1000).toISOString();
@@ -248,6 +248,46 @@ describe('capture-close: pass behaviour', () => {
     // loadLedger treats ENOENT as a fresh (empty) ledger, so this is a clean no-op run.
     assert.equal(result.ok, true);
     assert.equal(result.targets, 0);
+  });
+});
+
+describe('capture-close: the report explains WHY a lookup failed', () => {
+  // A bare "unresolved 5" is undiagnosable: it reads identically whether the provider
+  // is down, a fixture identity is missing, or five games simply have no quote yet.
+  const resultWith = (unresolvedDetail) => ({
+    ok: true,
+    ledgerPath: '/tmp/ledger.json',
+    audit: {
+      scans: 1,
+      candidates: 2,
+      bets: 0,
+      settlements: 0,
+      settledBets: 0,
+      pricedCandidates: 2,
+      priceFormats: { american: 2 },
+      issues: {}
+    },
+    closes: { captured: 0, asPrice: 0, asImpliedProbability: 0, withClv: 0 },
+    targets: 5,
+    captured: 0,
+    unresolved: unresolvedDetail.length,
+    rejected: 0,
+    unresolvedDetail,
+    excluded: {}
+  });
+
+  it('groups the distinct reasons with counts', () => {
+    const out = formatReport(resultWith([{ reason: 'no_game_id' }, { reason: 'no_game_id' }, { reason: 'no_quote' }]));
+    assert.match(out, /unresolved x2: no_game_id/);
+    assert.match(out, /unresolved x1: no_quote/);
+  });
+
+  it('says nothing when there is nothing unresolved', () => {
+    assert.doesNotMatch(formatReport(resultWith([])), /unresolved x/);
+  });
+
+  it('still prints the count even if a reason is missing', () => {
+    assert.match(formatReport(resultWith([{}])), /unresolved x1: unknown/);
   });
 });
 
