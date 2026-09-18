@@ -86,6 +86,12 @@ function formatReport(document, ledgerPath) {
     `  candidates ${btc.candidates} | with a captured close ${btc.sample} | no close ${btc.withoutClose}` +
       (btc.withCloseNoPrice ? ` | close but no price ${btc.withCloseNoPrice}` : '')
   );
+  if (btc.neverClosable) {
+    out.push(
+      `    of the no-close rows: ${btc.notYetClosed} still closable, ` +
+        `${btc.neverClosable} NEVER closable (no resolvable fixture — recorded before playId was stored)`
+    );
+  }
   if (btc.sample === 0) {
     out.push('  no closes captured yet — run: npm run capture:close -- --live');
   } else {
