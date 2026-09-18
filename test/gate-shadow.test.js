@@ -8,6 +8,7 @@ const {
   gateSweepReport,
   signalSweepReport,
   fairAnchorReport,
+  shoppingGapReport,
   candidateGateView
 } = require('../lib/gate-shadow');
 
@@ -245,5 +246,119 @@ describe('fairAnchorReport: all-books EV vs sharp-anchored EV, head to head', ()
       { evThresholds: [2] }
     );
     assert.equal(report.graded, 1);
+  });
+});
+
+describe('shoppingGapReport: how much price is left on the table', () => {
+  // Taken -110 while -105 was available, at a fair probability of 0.50.
+  //   EV at -105 : 0.5 * 1.95238 - 1 = -2.38%
+  //   EV at -110 : 0.5 * 1.90909 - 1 = -4.55%
+  //   foregone   : +2.17 percentage points, for free, just by taking the other book.
+  const leftValue = {
+    candidateId: 'g1',
+    gameId: 'f1',
+    market: 'Moneyline',
+    selection: 'Yankees',
+    odds: -110,
+    clvPct: -0.02,
+    featureSnapshot: { marketFairProbability: 0.5, bestAvailableOdds: -105, executionQuality: 'playable' }
+  };
+  const tookBest = {
+    candidateId: 'g2',
+    gameId: 'f2',
+    market: 'Moneyline',
+    selection: 'Red Sox',
+    odds: -105,
+    clvPct: 0.03,
+    featureSnapshot: { marketFairProbability: 0.5, bestAvailableOdds: -105, executionQuality: 'best' }
+  };
+
+  it('measures the EV foregone when a better price existed', () => {
+    const report = shoppingGapReport({ candidates: [leftValue, tookBest] }, { minSample: 1 });
+    assert.equal(report.measured, 2);
+    assert.equal(report.betterPriceExisted, 1);
+    assert.equal(report.tookBestPrice, 1);
+    assert.ok(Math.abs(report.meanEvForegonePct - 2.17) < 0.05, `expected ~2.17pp, got ${report.meanEvForegonePct}`);
+  });
+
+  it('splits realised CLV by whether the best price was taken', () => {
+    const report = shoppingGapReport({ candidates: [leftValue, tookBest] }, { minSample: 1 });
+    assert.equal(report.leftValue.sample, 1);
+    assert.equal(report.leftValue.meanClvPct, -0.02);
+    assert.equal(report.tookBest.sample, 1);
+    assert.equal(report.tookBest.meanClvPct, 0.03);
+  });
+
+  it('counts rows with no best available price as UNMEASURABLE, never a zero gap', () => {
+    // Defaulting to zero would report flawless execution that was never observed.
+    const noBest = {
+      ...leftValue,
+      candidateId: 'g3',
+      gameId: 'f3',
+      featureSnapshot: { marketFairProbability: 0.5, bestAvailableOdds: null }
+    };
+    const report = shoppingGapReport({ candidates: [leftValue, noBest] }, { minSample: 1 });
+    assert.equal(report.measured, 1);
+    assert.equal(report.unmeasurable, 1);
+    assert.equal(report.tookBestPrice, 0);
+  });
+
+  it('reports a null gap when no fair probability is available', () => {
+    const noFair = {
+      ...leftValue,
+      candidateId: 'g4',
+      gameId: 'f4',
+      featureSnapshot: { bestAvailableOdds: -105 }
+    };
+    const report = shoppingGapReport({ candidates: [noFair] }, { minSample: 1 });
+    assert.equal(report.meanEvForegonePct, null);
+    assert.equal(report.betterPriceExisted, 1, 'the gap is still detected, just not priced');
+  });
+
+  it('dedupes the same observation across repeat scans', () => {
+    const report = shoppingGapReport(
+      { candidates: [leftValue, { ...leftValue, candidateId: 'dup', scanId: 'later' }] },
+      { minSample: 1 }
+    );
+    assert.equal(report.measured, 1);
+  });
+
+  it('does NOT count a worse comparison price as value left on the table', () => {
+    // `bestAvailableOdds` excludes the target book, so it can be WORSE than our own
+    // price. Testing mere inequality counted these as gaps and reported 95% of rows
+    // as "leaving value on the table" when the truth was the reverse. This is the
+    // regression guard for that inversion.
+    const oursIsBest = {
+      candidateId: 'g5',
+      gameId: 'f5',
+      market: 'Moneyline',
+      selection: 'Yankees',
+      odds: -110,
+      clvPct: 0.01,
+      // another book quotes a worse number; we already hold the best
+      featureSnapshot: { marketFairProbability: 0.5, bestAvailableOdds: -125 }
+    };
+    const report = shoppingGapReport({ candidates: [oursIsBest] }, { minSample: 1 });
+    assert.equal(report.tookBestPrice, 1, 'we hold the best price');
+    assert.equal(report.betterPriceExisted, 0, 'a worse price is not an opportunity');
+    assert.equal(report.meanEvForegonePct, null);
+  });
+
+  it('compares on DECIMAL value, not on raw American numbers', () => {
+    // +104 vs +102: raw max would say +104 is "best", and it genuinely is here.
+    // -110 vs -105: the larger raw number (-105) is also the better price. The trap
+    // is the sign change, so assert both directions explicitly.
+    const underdogBetter = {
+      candidateId: 'g6',
+      gameId: 'f6',
+      market: 'Moneyline',
+      selection: 'Dog',
+      odds: 102,
+      clvPct: 0,
+      featureSnapshot: { marketFairProbability: 0.49, bestAvailableOdds: 104 }
+    };
+    const report = shoppingGapReport({ candidates: [underdogBetter] }, { minSample: 1 });
+    assert.equal(report.betterPriceExisted, 1, '+104 is better than +102');
+    assert.ok(report.meanEvForegonePct > 0);
   });
 });

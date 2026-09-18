@@ -25,7 +25,7 @@
 
 const { loadLedger, defaultLedgerPath } = require('../lib/record-ledger');
 const { evaluateLedger } = require('../lib/record-metrics');
-const { gateSweepReport, signalSweepReport, fairAnchorReport } = require('../lib/gate-shadow');
+const { gateSweepReport, signalSweepReport, fairAnchorReport, shoppingGapReport } = require('../lib/gate-shadow');
 
 function pct(value) {
   if (value == null) return 'n/a';
@@ -151,6 +151,30 @@ function formatReport(document, ledgerPath) {
       out.push(`    [insufficient sample: ${withSharp} graded close(s) with a sharp fair; read as direction only]`);
     }
   }
+  const shopping = document.shoppingGap;
+  if (shopping && shopping.measured) {
+    out.push('');
+    out.push('Execution — is the best available price being taken?');
+    out.push(
+      `  ${shopping.tookBestPrice}/${shopping.measured} took the best price; ` +
+        `${shopping.betterPriceExisted} left value on the table`
+    );
+    if (shopping.meanEvForegonePct != null) {
+      out.push(
+        `  mean EV given away when a better price existed: ${pct(shopping.meanEvForegonePct)} ` +
+          `(${pct(shopping.totalEvForegonePct)} total across ${shopping.betterPriceExisted} rows)`
+      );
+    }
+    const cell = (row) => `${((row.rate || 0) * 100).toFixed(1)}%/${pct(row.meanClvPct)} (n=${row.sample})`;
+    out.push(`    took best price  CLV ${cell(shopping.tookBest)}`);
+    out.push(`    left value       CLV ${cell(shopping.leftValue)}`);
+    if (shopping.unmeasurable) {
+      out.push(`    [${shopping.unmeasurable} row(s) carry no best-available price — not counted as a zero gap]`);
+    }
+    if (shopping.insufficientSample) {
+      out.push('    [insufficient sample: read as direction only]');
+    }
+  }
   const signals = document.signalSweep;
   if (signals && signals.graded) {
     out.push('');
@@ -229,6 +253,7 @@ function main() {
   // does, the fix is upstream in the signal, not in the gate's calibration.
   document.signalSweep = signalSweepReport(loaded.ledger, { minSample: resolvedMinSample });
   document.fairAnchor = fairAnchorReport(loaded.ledger, { minSample: resolvedMinSample });
+  document.shoppingGap = shoppingGapReport(loaded.ledger, { minSample: resolvedMinSample });
 
   if (flags.json) console.log(JSON.stringify({ ledgerPath, ...document }, null, 2));
   else console.log(formatReport(document, ledgerPath));

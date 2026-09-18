@@ -22,8 +22,17 @@ const { STANDARD_KEEP_FIELDS } = require('../lib/ssb-formatter');
 const { mapCandidateRow } = require('../lib/ssb-mcp-candidate-mapper');
 const { sharpFairProbabilityForRow } = require('../lib/screen-fair-probability');
 
-// Every fair-anchor field that must survive from the mapper to the recorder.
-const FAIR_ANCHOR_FIELDS = ['marketFairProbability', 'sharpMarketFairProbability', 'sharpFairBookCount'];
+// Every field that must survive from the mapper to the recorder.
+//
+// These are the fields where a silent drop is indistinguishable from a legitimately
+// absent value, so the ledger would read `null` forever while looking implemented.
+const LEDGER_BOUND_FIELDS = [
+  'marketFairProbability',
+  'sharpMarketFairProbability',
+  'sharpFairBookCount',
+  'bestAvailableOdds',
+  'executionQuality'
+];
 
 const row = () => ({
   league: 'MLB',
@@ -33,6 +42,8 @@ const row = () => ({
   selection2: 'Red Sox',
   book: 'FanDuel',
   odds: -120,
+  bestAvailableOdds: -105,
+  executionQuality: 'playable',
   allBookOdds: {
     Pinnacle: { odds1: -120, odds2: 100 },
     Circa: { odds1: -118, odds2: 98 },
@@ -41,10 +52,10 @@ const row = () => ({
 });
 
 describe('fair anchor fields survive every whitelist layer', () => {
-  it('every fair-anchor field is in the formatter keep-set', () => {
+  it('every ledger-bound field is in the formatter keep-set', () => {
     // Losing one of these is SILENT: the ledger records null, which is
     // indistinguishable from a legitimately absent value.
-    for (const field of FAIR_ANCHOR_FIELDS) {
+    for (const field of LEDGER_BOUND_FIELDS) {
       assert.ok(
         STANDARD_KEEP_FIELDS.has(field),
         `${field} is missing from STANDARD_KEEP_FIELDS — it will be dropped before the recorder sees it`
@@ -52,13 +63,29 @@ describe('fair anchor fields survive every whitelist layer', () => {
     }
   });
 
-  it('the mapper emits all three, with a real sharp value', () => {
+  it('the mapper emits all of them', () => {
     const mapped = mapCandidateRow(row());
-    for (const field of FAIR_ANCHOR_FIELDS) {
+    for (const field of LEDGER_BOUND_FIELDS) {
       assert.ok(field in mapped, `mapper does not emit ${field}`);
     }
+  });
+
+  it('the mapper emits real values for the number-bearing fields', () => {
+    const mapped = mapCandidateRow(row());
     assert.ok(Number.isFinite(mapped.sharpMarketFairProbability));
     assert.equal(mapped.sharpFairBookCount, 2, 'only Pinnacle and Circa are sharp here');
+    // bestAvailableOdds must be carried as a NUMBER, not stringified and not dropped:
+    // it is the only record of what price was available, and therefore the only way
+    // to measure the shopping gap at all.
+    assert.equal(mapped.bestAvailableOdds, -105);
+    assert.equal(mapped.executionQuality, 'playable');
+  });
+
+  it('a missing best available price stays null, never defaulted to the taken price', () => {
+    // Defaulting it to `odds` would report a zero shopping gap that was never
+    // observed — the worst outcome, because it reads as perfect execution.
+    const withoutBest = { ...row(), bestAvailableOdds: undefined };
+    assert.equal(mapCandidateRow(withoutBest).bestAvailableOdds, null);
   });
 
   it('the sharp fair is not a copy of the all-books fair', () => {
