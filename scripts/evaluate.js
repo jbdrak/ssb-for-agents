@@ -25,7 +25,7 @@
 
 const { loadLedger, defaultLedgerPath } = require('../lib/record-ledger');
 const { evaluateLedger } = require('../lib/record-metrics');
-const { gateSweepReport, signalSweepReport } = require('../lib/gate-shadow');
+const { gateSweepReport, signalSweepReport, fairAnchorReport } = require('../lib/gate-shadow');
 
 function pct(value) {
   if (value == null) return 'n/a';
@@ -130,6 +130,27 @@ function formatReport(document, ledgerPath) {
     out.push('  A rising beat rate across bands is evidence the EV signal has content;');
     out.push('  a flat or falling one means the gate is filtering on noise.');
   }
+  const anchors = document.fairAnchor;
+  if (anchors && anchors.graded) {
+    const withSharp = anchors.graded - anchors.withoutSharpFair;
+    out.push('');
+    out.push('Fair anchor — which "fair" makes EV mean anything?');
+    out.push('  the all-books fair averages square books into the fair; the sharp-anchored one does not');
+    const cells = (bands) =>
+      bands
+        .filter((b) => b.sample > 0)
+        .map((b) => `EV>=${b.min}% ${((b.rate || 0) * 100).toFixed(1)}%/${pct(b.meanClvPct)} (n=${b.sample})`)
+        .join('  ');
+    const allLine = cells(anchors.allBooks);
+    const sharpLine = cells(anchors.sharp);
+    out.push(`    all-books      ${allLine || 'no band clears even EV>=0%'}`);
+    out.push(`    sharp-anchored ${sharpLine || 'no band clears even EV>=0%'}`);
+    if (withSharp === 0) {
+      out.push('    [no graded close carries a sharp fair yet — the comparison fills in as new scans close]');
+    } else if (anchors.insufficientSample) {
+      out.push(`    [insufficient sample: ${withSharp} graded close(s) with a sharp fair; read as direction only]`);
+    }
+  }
   const signals = document.signalSweep;
   if (signals && signals.graded) {
     out.push('');
@@ -207,6 +228,7 @@ function main() {
   // The broadest view: does ANY recorded signal separate winners from losers? If none
   // does, the fix is upstream in the signal, not in the gate's calibration.
   document.signalSweep = signalSweepReport(loaded.ledger, { minSample: resolvedMinSample });
+  document.fairAnchor = fairAnchorReport(loaded.ledger, { minSample: resolvedMinSample });
 
   if (flags.json) console.log(JSON.stringify({ ledgerPath, ...document }, null, 2));
   else console.log(formatReport(document, ledgerPath));
