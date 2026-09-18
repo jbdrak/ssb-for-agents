@@ -313,7 +313,7 @@ number. Two things about the close record are deliberate:
 
 Key properties:
 
-- **`--record-scan` is manual only** — it records whenever you run `pp scan --record-scan`; there is no cron job or background poller hitting SSB on a schedule.
+- **`--record-scan` is manual only** — it records whenever you run `pp scan --record-scan`. Scan _capture_ is deliberately low-frequency (a few times a day) and is never a poller: the historical account loss came from polling the scan endpoint every 10 minutes. Any timer lives in a shim outside this repo, because `test/manual-only-gates.test.js` forbids a tracked `scripts/*` executable that touches live SSB from carrying its own timing.
 - **Only BET promotes** — `pp record-card` turns explicit `BET` cards into official bet records; `LEAN`/`PASS` update the candidate without creating a bet. Re-importing an already-recorded card is a no-op (idempotent).
 - **`pp record` is local and read-only** — `stats`, `review`, and `pending` modes read the ledger with no network and no writes; `--date` filters by the America/Chicago calendar day of scheduled start, `--json` emits machine-readable output.
 - **Settlement never calls SSB** — `scripts/settle-record.js` (and `lib/record-settlement`) contain no network code. You fetch results yourself (e.g. an ESPN scoreboard dump) and hand them over as a local JSON file; the script matches bets to final scores, computes P&L, and writes the ledger atomically. `--dry-run` reports without writing anything; `--force` re-settles bets that already have a settled status.
@@ -477,9 +477,13 @@ Or manually: add `ssb` to your `mcp_servers` in config.yaml. The `get_started` t
 
 ### Sharp-money alerts
 
-SSB is manual-only. There is no supported cron, scheduled workflow,
-or background polling mode. Run `quick_screen` on demand when you want a fresh
-result.
+SSB is manual-only for _decisions_. There is no polling mode and no supported way to
+have automation place a bet — run `quick_screen` on demand when you want a fresh result.
+One bounded exception exists for _measurement_, authorized by the operator on
+2026-09-17: a closing-price sweep every 30 minutes, a scan capture three times a day,
+and a public-only settle/evaluate digest. A closing price exists only in the minutes
+before a start, so without a scheduled sweep the record can never accumulate the closes
+that decide whether the card has an edge. Timers live in shims outside this repo.
 
 ## 🎯 The Natural Language Flow
 
