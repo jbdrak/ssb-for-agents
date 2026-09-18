@@ -346,3 +346,38 @@ describe('record-metrics: a pending settlement must not shadow a decided bet', (
     assert.ok(overall.wins + overall.losses === 25);
   });
 });
+
+describe('record-metrics: close eligibility', () => {
+  // A candidate with no resolvable fixture can NEVER take a close, because
+  // validate_play requires a gameId. Reporting it inside "no close" makes a
+  // structurally impossible close look like a failing sweep.
+  const candidate = (overrides) => ({
+    candidateId: `c-${Math.random()}`,
+    market: 'Moneyline',
+    selection: 'A',
+    odds: -110,
+    ...overrides
+  });
+
+  it('separates still-closable rows from permanently unclosable ones', () => {
+    const report = metrics.beatTheCloseReport({
+      candidates: [
+        candidate({ gameId: 'g1' }), // closable, no close yet
+        candidate({ playId: 'MLB:GAME:x:y:1::Moneyline::A' }), // closable via playId
+        candidate({}), // recorded before playId was stored: never closable
+        candidate({ gameId: 'g2', closeOdds: -105, clvPct: 1.2 }) // closed
+      ]
+    });
+    assert.equal(report.candidates, 4);
+    assert.equal(report.sample, 1, 'one row has a close-relative CLV');
+    assert.equal(report.withoutClose, 3);
+    assert.equal(report.notYetClosed, 2);
+    assert.equal(report.neverClosable, 1);
+  });
+
+  it('reports zero unclosable rows when every fixture is resolvable', () => {
+    const report = metrics.beatTheCloseReport({ candidates: [candidate({ gameId: 'g1' })] });
+    assert.equal(report.neverClosable, 0);
+    assert.equal(report.notYetClosed, 1);
+  });
+});
