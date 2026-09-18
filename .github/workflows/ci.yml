@@ -73,6 +73,12 @@ jobs:
         # standalone tool and exits non-zero on any cycle.
         run: npm run check:circular
 
+      - name: Check reachability and handler wiring
+        # Two silent-failure classes: a production file nothing references, and a
+        # `ctx.handlers.X(...)` call site whose symbol no wired handler module
+        # provides (a latent TypeError on a real scan).
+        run: npm run check:reachability
+
       - name: Check formatting
         run: npm run format:check
 

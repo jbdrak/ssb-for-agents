@@ -17,9 +17,13 @@ circuit-cache.json
 # scratch scripts (one-off scans)
 scripts/_scan-*
 scripts/scan-*
+# NOTE: `scripts/check-*` also swallows real CI checkers. Every tracked checker must be
+# un-ignored below, or it silently stays out of the repo while still existing on disk —
+# so a local `npm run verify` passes and CI fails with MODULE_NOT_FOUND.
 scripts/check-*
 !scripts/check-package-contents.js
 !scripts/check-publish-tree.js
+!scripts/check-reachability.js
 scripts/novig-scan.js
 .commandcode/
 data/snapshots.jsonl
