@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fix: the close-eligibility split ran BEFORE the duplicate collapse, so the closable bucket was overstated. Measured on the live ledger: 209 counted vs 158 actually distinct — a 24% overstatement of the rows that can still be measured, which is precisely the number the ~30-close target is compared against. Dedupe now happens first and the buckets are all deduped, with the raw count still reported alongside (`candidates 471 (400 unique)`). The honest live picture: 471 recorded, 400 unique, 18 closed, 158 still closable, 224 never closable — so the real measurement ceiling is 176 plays, not 471.
+
 - feat: the beat-the-close report now separates candidates that can still be closed from those that never can. `validate_play` requires a gameId, and the 243 candidates recorded before `playId` was persisted carry neither a gameId nor a playId — and the scan records do NOT retain the raw plays, so they are unrepairable from the ledger. Reporting them inside `no close` made a structurally impossible close look like a failing sweep (and implied a 452-row backlog that was never a backlog). The report now reads `of the no-close rows: N still closable, M NEVER closable`, so the real measurement denominator is visible: on the live ledger, 471 candidates where only 227 are measurable at all.
 - chore(deps): bump `prettier` and `@types/node` to their latest patch releases. `npm audit` reports 0 vulnerabilities.
 

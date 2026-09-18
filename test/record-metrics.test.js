@@ -380,4 +380,16 @@ describe('record-metrics: close eligibility', () => {
     assert.equal(report.neverClosable, 0);
     assert.equal(report.notYetClosed, 1);
   });
+
+  it('dedupes BEFORE the eligibility split, so the closable count is not inflated', () => {
+    // Measured on the live ledger: 209 counted vs 158 actually distinct, because the
+    // same play is recorded once per scan run. Counting before deduping overstated
+    // the rows that can still be measured by 24%.
+    const dup = () => candidate({ gameId: 'g1', candidateId: `c-${Math.random()}`, odds: -110 });
+    const report = metrics.beatTheCloseReport({ candidates: [dup(), dup(), dup()] });
+    assert.equal(report.candidates, 3, 'raw row count is still reported');
+    assert.equal(report.uniqueCandidates, 1, 'but only one distinct observation exists');
+    assert.equal(report.withoutClose, 1, 'and the no-close bucket is deduped too');
+    assert.equal(report.notYetClosed, 1);
+  });
 });
