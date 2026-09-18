@@ -41,6 +41,7 @@
  *   node scripts/capture-close.js --audit
  *   node scripts/capture-close.js --prices /tmp/closes.json
  *   node scripts/capture-close.js --live --window 30
+ *   node scripts/capture-close.js --live --quiet     # silent unless it captured
  */
 
 const { loadLedger, saveLedger, defaultLedgerPath } = require('../lib/record-ledger');
@@ -343,6 +344,15 @@ async function main() {
     book: typeof flags.book === 'string' ? flags.book : undefined,
     ledgerPath: typeof flags.ledger === 'string' ? flags.ledger : undefined
   });
+
+  // Quiet mode: print nothing when there is nothing to report. An invocation that
+  // announces "0 captured" every time is noise the reader learns to ignore, which
+  // is how a real alert gets missed. Failures still speak.
+  if (flags.quiet !== undefined && result.ok && !result.captured) {
+    if (flags.json) console.log(JSON.stringify({ quiet: true, captured: 0, targets: result.targets || 0 }));
+    return result;
+  }
+
   if (flags.json) console.log(JSON.stringify(result, null, 2));
   else console.log(formatReport(result));
   if (!result.ok) process.exit(1);
