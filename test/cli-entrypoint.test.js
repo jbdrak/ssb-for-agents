@@ -113,6 +113,18 @@ describe('pp CLI entrypoint', () => {
     assert.match(result, /--all-markets/);
   });
 
+  it('prints the package version for --version, not the help banner', () => {
+    // Regression: --version fell through the `!positional[0]` branch into printHelp,
+    // so it printed the banner and no version at all.
+    const result = execFileSync(process.execPath, [ppPath, '--version'], {
+      cwd: projectRoot,
+      encoding: 'utf8'
+    });
+
+    assert.equal(result.trim(), require('../package.json').version);
+    assert.doesNotMatch(result, /Usage:/);
+  });
+
   it('prints help through the published backtest wrapper', () => {
     const result = execFileSync(process.execPath, [backtestPath, '--help'], {
       cwd: projectRoot,

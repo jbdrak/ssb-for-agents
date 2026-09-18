@@ -2943,8 +2943,14 @@ async function main() {
     });
   }
 
-  if (!positional[0]) {
+  if (!positional[0] && !flags.version) {
     printHelp('');
+    process.exit(0);
+  }
+
+  // Version — must print the version, not fall through to the help banner.
+  if (flags.version) {
+    console.log(require(PROJECT + '/package.json').version);
     process.exit(0);
   }
   const command = positional[0];
