@@ -210,6 +210,117 @@ describe('getPlayResult — pure branches', () => {
   });
 });
 
+describe('fetchEspnScoreboard — probable starters', () => {
+  beforeEach(() => clearCache());
+  afterEach(() => clearCache());
+
+  const stubWith = (competitors, statusType = { state: 'pre', description: 'Scheduled' }) => {
+    const orig = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        events: [
+          {
+            competitions: [
+              {
+                competitors,
+                venue: { fullName: 'Great American Ball Park' },
+                status: { type: statusType }
+              }
+            ]
+          }
+        ]
+      })
+    });
+    return () => {
+      global.fetch = orig;
+    };
+  };
+
+  it('exposes each side probable with name, record and ERA', async () => {
+    const restore = stubWith([
+      {
+        homeAway: 'home',
+        team: { displayName: 'Reds' },
+        score: '0',
+        probables: [
+          {
+            athlete: { displayName: 'Chase Burns' },
+            statistics: [
+              { name: 'ERA', displayValue: '2.80' },
+              { name: 'wins', displayValue: '15' },
+              { name: 'losses', displayValue: '3' }
+            ]
+          }
+        ]
+      },
+      {
+        homeAway: 'away',
+        team: { displayName: 'Cubs' },
+        score: '0',
+        probables: [
+          {
+            athlete: { displayName: 'Clay Holmes' },
+            statistics: [
+              { name: 'ERA', displayValue: '2.85' },
+              { name: 'wins', displayValue: '6' },
+              { name: 'losses', displayValue: '7' }
+            ]
+          }
+        ]
+      }
+    ]);
+    try {
+      const [comp] = await fetchEspnScoreboard('MLB');
+      assert.equal(comp.homeProbable.name, 'Chase Burns');
+      assert.equal(comp.homeProbable.era, '2.80');
+      assert.equal(comp.homeProbable.wins, '15');
+      assert.equal(comp.awayProbable.name, 'Clay Holmes');
+      assert.equal(comp.venue, 'Great American Ball Park');
+    } finally {
+      restore();
+    }
+  });
+
+  it('returns null when ESPN has NOT posted a starter, never a placeholder', async () => {
+    // "Not announced" and "a pitcher whose name we do not know" are different facts.
+    const restore = stubWith([
+      { homeAway: 'home', team: { displayName: 'Reds' }, score: '0' },
+      { homeAway: 'away', team: { displayName: 'Cubs' }, score: '0', probables: [] }
+    ]);
+    try {
+      const [comp] = await fetchEspnScoreboard('MLB');
+      assert.equal(comp.homeProbable, null);
+      assert.equal(comp.awayProbable, null);
+    } finally {
+      restore();
+    }
+  });
+
+  it('leaves the settlement fields untouched (purely additive)', async () => {
+    // Existing consumers read these by name; adding starters must not disturb them.
+    const restore = stubWith(
+      [
+        { homeAway: 'home', team: { displayName: 'Lakers' }, score: '110' },
+        { homeAway: 'away', team: { displayName: 'Celtics' }, score: '105' }
+      ],
+      { state: 'post', description: 'Final' }
+    );
+    try {
+      const [comp] = await fetchEspnScoreboard('NBA');
+      assert.equal(comp.homeTeam, 'Lakers');
+      assert.equal(comp.awayTeam, 'Celtics');
+      assert.equal(comp.homeScore, '110');
+      assert.equal(comp.awayScore, '105');
+      assert.equal(comp.isFinal, true);
+      assert.equal(comp.winner, 'Lakers');
+      assert.equal(comp.homeProbable, null, 'no probables on a final game is normal');
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe('fetchEspnScoreboard — caching + paths', () => {
   beforeEach(() => clearCache());
   afterEach(() => clearCache());
