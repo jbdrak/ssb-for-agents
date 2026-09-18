@@ -142,7 +142,11 @@ function run() {
     text.set(f, src);
     graph.set(
       f,
-      new Set(requiresOf(src).map((s) => resolveSpec(s, path.dirname(f))).filter(Boolean))
+      new Set(
+        requiresOf(src)
+          .map((s) => resolveSpec(s, path.dirname(f)))
+          .filter(Boolean)
+      )
     );
   }
 
@@ -187,7 +191,10 @@ function run() {
     for (const next of graph.get(cur) || []) if (!seen.has(next)) stack.push(next);
   }
 
-  const unreachable = files.filter((f) => !seen.has(f)).map(rel).sort();
+  const unreachable = files
+    .filter((f) => !seen.has(f))
+    .map(rel)
+    .sort();
 
   // ---- handler wiring: every ctx.handlers.X call site must have a provider ----
   const handlerDir = path.join(ROOT, 'scripts/server/handlers');
