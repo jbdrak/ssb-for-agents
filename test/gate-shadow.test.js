@@ -3,7 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { gateShadowReport, gateSweepReport, candidateGateView } = require('../lib/gate-shadow');
+const { gateShadowReport, gateSweepReport, signalSweepReport, candidateGateView } = require('../lib/gate-shadow');
 
 let seq = 0;
 
@@ -112,5 +112,77 @@ describe('gate-shadow: gateSweepReport', () => {
   it('flags the whole sweep as insufficient below the sample floor', () => {
     const report = gateSweepReport({ candidates: [passing()] }, { minSample: 30 });
     assert.equal(report.insufficientSample, true);
+  });
+});
+
+describe('gate-shadow: signalSweepReport', () => {
+  const withQuality = (score, clvPct) => {
+    seq += 1;
+    return {
+      candidateId: `c-q-${seq}`,
+      gameId: `gq-${seq}`,
+      market: 'Moneyline',
+      selection: `Q${seq}`,
+      odds: -110,
+      clvPct,
+      tier: 'TIER 2',
+      movementDisposition: 'supportive_clean',
+      featureSnapshot: { marketFairProbability: 0.5, signalQualityScore: score }
+    };
+  };
+
+  it('bands a numeric signal and keeps the sample monotone', () => {
+    const report = signalSweepReport({
+      candidates: [withQuality(9, 3), withQuality(8, 2), withQuality(3, -3), withQuality(2, -2)]
+    });
+    const signal = report.numeric.find((entry) => entry.key === 'signalQualityScore');
+    const sizes = signal.bands.map((band) => band.sample);
+    for (let i = 1; i < sizes.length; i += 1) {
+      assert.ok(sizes[i] <= sizes[i - 1], `band ${i} must not be larger than band ${i - 1}`);
+    }
+  });
+
+  it('groups a categorical signal by value', () => {
+    const report = signalSweepReport({ candidates: [withQuality(5, 1), withQuality(5, -1)] });
+    const signal = report.categorical.find((entry) => entry.key === 'tier');
+    assert.equal(signal.groups.length, 1);
+    assert.equal(signal.groups[0].value, 'TIER 2');
+    assert.equal(signal.groups[0].sample, 2);
+  });
+
+  it('reports separates ONLY when the readable extremes agree on both metrics', () => {
+    // High quality => beats and positive CLV. Low quality => loses and negative CLV.
+    const report = signalSweepReport(
+      { candidates: [withQuality(9, 3), withQuality(9, 4), withQuality(3, -3), withQuality(3, -4)] },
+      { minSample: 2 }
+    );
+    const signal = report.numeric.find((entry) => entry.key === 'signalQualityScore');
+    assert.equal(signal.separates, true, 'a real spread across readable bands must separate');
+    assert.ok(report.separatingSignals.includes('signalQualityScore'));
+    assert.equal(report.separates, true);
+  });
+
+  it('does NOT report separates when the sample is too small to read', () => {
+    const report = signalSweepReport({ candidates: [withQuality(9, 3), withQuality(3, -3)] }, { minSample: 5 });
+    assert.equal(report.separates, false, 'one row per band is not a finding');
+  });
+
+  it('does NOT report separates when the metrics disagree', () => {
+    // Better beat rate but WORSE mean CLV: not a usable separation.
+    const report = signalSweepReport(
+      { candidates: [withQuality(9, 0.1), withQuality(9, -5), withQuality(3, -1), withQuality(3, -1)] },
+      { minSample: 2 }
+    );
+    const signal = report.numeric.find((entry) => entry.key === 'signalQualityScore');
+    assert.equal(signal.separates, false);
+    assert.equal(report.separates, false);
+  });
+
+  it('excludes rows without a close and dedupes repeats', () => {
+    const row = withQuality(5, 1);
+    const report = signalSweepReport({
+      candidates: [row, { ...row, candidateId: 'dup' }, { ...withQuality(5, 1), clvPct: null }]
+    });
+    assert.equal(report.graded, 1);
   });
 });

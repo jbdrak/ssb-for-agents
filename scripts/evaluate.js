@@ -25,7 +25,7 @@
 
 const { loadLedger, defaultLedgerPath } = require('../lib/record-ledger');
 const { evaluateLedger } = require('../lib/record-metrics');
-const { gateSweepReport } = require('../lib/gate-shadow');
+const { gateSweepReport, signalSweepReport } = require('../lib/gate-shadow');
 
 function pct(value) {
   if (value == null) return 'n/a';
@@ -130,6 +130,37 @@ function formatReport(document, ledgerPath) {
     out.push('  A rising beat rate across bands is evidence the EV signal has content;');
     out.push('  a flat or falling one means the gate is filtering on noise.');
   }
+  const signals = document.signalSweep;
+  if (signals && signals.graded) {
+    out.push('');
+    out.push('Signal separation — does any recorded signal separate winners from losers?');
+    out.push(
+      signals.separates
+        ? `  SEPARATING: ${signals.separatingSignals.join(', ')}`
+        : '  no signal separates at this sample'
+    );
+    if (signals.insufficientSample) {
+      out.push(`  [insufficient sample: ${signals.graded} graded close(s); read as direction only]`);
+    }
+    const cell = (row) => `${((row.rate || 0) * 100).toFixed(1)}%/${pct(row.meanClvPct)}`;
+    for (const signal of signals.numeric) {
+      const readable = signal.bands.filter((band) => band.sample > 0);
+      if (readable.length < 2) continue;
+      const low = readable[0];
+      const high = readable[readable.length - 1];
+      out.push(
+        `    ${signal.label.padEnd(22)} >=${String(low.min).padStart(4)} ${cell(low)}  ->  >=${String(high.min).padStart(4)} ${cell(high)}`
+      );
+    }
+    for (const signal of signals.categorical) {
+      if (signal.groups.length < 2) continue;
+      const summary = signal.groups
+        .slice(0, 3)
+        .map((group) => `${group.value} ${cell(group)}`)
+        .join('   ');
+      out.push(`    ${signal.label.padEnd(22)} ${summary}`);
+    }
+  }
   return out.join('\n');
 }
 
@@ -173,6 +204,9 @@ function main() {
   // gate rejects. Attached here so the daily digest carries it.
   const gateSweep = gateSweepReport(loaded.ledger, { minSample: resolvedMinSample });
   document.gateSweep = gateSweep;
+  // The broadest view: does ANY recorded signal separate winners from losers? If none
+  // does, the fix is upstream in the signal, not in the gate's calibration.
+  document.signalSweep = signalSweepReport(loaded.ledger, { minSample: resolvedMinSample });
 
   if (flags.json) console.log(JSON.stringify({ ledgerPath, ...document }, null, 2));
   else console.log(formatReport(document, ledgerPath));
