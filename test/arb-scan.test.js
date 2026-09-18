@@ -9,7 +9,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { findArbs, bestQuotes, impliedOf, DEFAULT_MIN_ARB_MARGIN_PCT } = require('../lib/arb-scan');
+const { findArbs, bestQuotes, rowsFromRankOutput, impliedOf, DEFAULT_MIN_ARB_MARGIN_PCT } = require('../lib/arb-scan');
 
 const row = (allBookOdds, extra = {}) => ({
   league: 'MLB',
@@ -173,5 +173,102 @@ describe('arb-scan: implausible margins are flagged as data problems', () => {
   it('does not flag a realistic sub-5% arb as suspicious', () => {
     const report = findArbs([row({ BookA: { odds1: 105, odds2: -115 }, BookB: { odds1: -115, odds2: 105 } })]);
     assert.equal(report.opportunities[0].suspicious, false);
+  });
+});
+
+describe('arb-scan: parsing a `pp rank -j` capture', () => {
+  it('skips the progress lines that precede the payload', () => {
+    // `pp ... -j` writes human progress before the JSON, so a naive parse throws
+    // "Unexpected token". Losing the whole sweep to a parse bug is the failure here.
+    const noisy = [
+      'Fetching MLB:GAME:A:B:123 [Cubs]...',
+      'Ranking MLB on NoVigApp...',
+      '{"result":[{"market":"Moneyline"}]}',
+      'Done in 12s'
+    ].join('\n');
+    const rows = rowsFromRankOutput(noisy);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].market, 'Moneyline');
+  });
+
+  it('accepts a bare array and a plain object payload', () => {
+    assert.equal(rowsFromRankOutput('[{"a":1}]').length, 1);
+    assert.equal(rowsFromRankOutput('{"result":[{"a":1},{"b":2}]}').length, 2);
+  });
+
+  it('returns [] instead of throwing on unusable input', () => {
+    // A report must degrade to "no rows", never crash and lose the run.
+    assert.deepEqual(rowsFromRankOutput(''), []);
+    assert.deepEqual(rowsFromRankOutput(null), []);
+    assert.deepEqual(rowsFromRankOutput('no json here at all'), []);
+    assert.deepEqual(rowsFromRankOutput('{"result":"not an array"}'), []);
+    assert.deepEqual(rowsFromRankOutput('{broken'), []);
+  });
+
+  it('is not fooled by brackets inside the progress lines', () => {
+    // The real output contains lines like "Fetching ... [Cubs]..." BEFORE the payload.
+    // Taking the first bracket grabbed "[Cubs]" and lost the entire sweep.
+    const noisy = ['Fetching MLB:GAME:X:Y:1 [Cubs]...', '{"result":[{"market":"Moneyline"}]}', 'Done in 3s'].join('\n');
+    assert.equal(rowsFromRankOutput(noisy).length, 1);
+  });
+});
+
+describe('arb-scan: one market is reported once, not once per side', () => {
+  // `pp rank` emits one row per SIDE, both carrying the same two-sided price map. Without
+  // dedupe every opportunity is reported twice and the count is inflated ~2x.
+  const sideRow = (selection) => ({
+    league: 'UFC',
+    market: 'Moneyline',
+    gameId: 'UFC:GAME:A:B:1',
+    game: 'A vs B',
+    selection1: 'A',
+    selection2: 'B',
+    selection,
+    allBookOdds: { BookA: { odds1: 120, odds2: -140 }, BookB: { odds1: -140, odds2: 120 } }
+  });
+
+  it('collapses the two side-rows of one market into a single opportunity', () => {
+    const report = findArbs([sideRow('A'), sideRow('B')]);
+    assert.equal(report.opportunities.length, 1);
+    assert.equal(report.examined, 1, 'examined counts unique markets, not rows');
+  });
+
+  it('keeps genuinely different markets in the same game', () => {
+    const report = findArbs([
+      sideRow('A'),
+      { ...sideRow('A'), market: 'Total Rounds', selection1: 'Over 2.5', selection2: 'Under 2.5' }
+    ]);
+    assert.equal(report.opportunities.length, 2);
+  });
+});
+
+describe('arb-scan: selection labels fall back to the nested selections map', () => {
+  it('resolves spread/total labels that the top level leaves null', () => {
+    // Real rank rows for spread/total markets have selection1/selection2 === null and
+    // carry "Over 8"/"Under 8" in the nested map.
+    const row = {
+      gameId: 'MLB:GAME:A:B:1',
+      market: 'Total Runs',
+      selection1: null,
+      selection2: null,
+      selections: { null: { selection1: 'Over 8', selection2: 'Under 8' } },
+      allBookOdds: { BookA: { odds1: 130, odds2: -150 }, BookB: { odds1: -150, odds2: 130 } }
+    };
+    const arb = findArbs([row]).opportunities[0];
+    assert.equal(arb.selection1, 'Over 8');
+    assert.equal(arb.selection2, 'Under 8');
+  });
+
+  it('does NOT fall back to participant, which cannot distinguish the two sides', () => {
+    const row = {
+      gameId: 'MLB:GAME:A:B:2',
+      market: 'Total Runs',
+      participant: 'Over 8.5',
+      selections: {},
+      allBookOdds: { BookA: { odds1: 130, odds2: -150 }, BookB: { odds1: -150, odds2: 130 } }
+    };
+    const arb = findArbs([row]).opportunities[0];
+    assert.equal(arb.selection1, null, 'printing participant for both sides would misdescribe the market');
+    assert.equal(arb.selection2, null);
   });
 });

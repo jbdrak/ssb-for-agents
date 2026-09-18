@@ -97,6 +97,7 @@
     "capture:close": "node scripts/capture-close.js",
     "fetch:results": "node scripts/fetch-results.js",
     "evaluate": "node scripts/evaluate.js",
+    "arbs": "node scripts/find-arbs.js",
     "repair:settlements": "node scripts/repair-shadow-settlements.js",
     "verify": "npm run check:version && npm run check:claims:quick && npm run check:secrets && npm run lint && npm run check:types && tsc -p tsconfig.strict-critical.json && npm run check:circular && npm run check:reachability && npm run format:check && npm run check:package && npm audit --audit-level=moderate --omit=dev && npm test",
     "test": "node --test --test-concurrency=1 test/*.test.js",
