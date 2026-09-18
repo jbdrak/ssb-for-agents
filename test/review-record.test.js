@@ -555,3 +555,48 @@ describe('review-record safety', () => {
     assert.doesNotMatch(source, /require\(\s*['"](?:node:)?(?:http|https|net|dns|tls|child_process)['"]\s*\)/);
   });
 });
+
+describe('review-record: non-decided settlements never erase a decided bet', () => {
+  // Regression: resolveStatus used to return `pending` for a pending settlement,
+  // so the 25 pending rows that `settle-record` wrote for unmatched legacy bets
+  // hid their real recorded outcomes and the record read 0W/0L.
+  it('falls back to the bet own status when the settlement is pending', () => {
+    const bet = { id: 'b1', status: 'win', plUnits: 0.77 };
+    assert.equal(review.resolveStatus(bet, { betId: 'b1', status: 'pending' }), 'win');
+  });
+
+  it('lets a decided settlement override the bet status', () => {
+    const bet = { id: 'b1', status: 'pending' };
+    assert.equal(review.resolveStatus(bet, { betId: 'b1', status: 'loss' }), 'loss');
+  });
+
+  it('reports the legacy record as 13W/12L while the pending rows are present', () => {
+    const bets = [];
+    const settlements = [];
+    for (let i = 0; i < 25; i += 1) {
+      const outcome = i < 13 ? 'win' : 'loss';
+      bets.push({
+        id: `b${i}`,
+        status: outcome,
+        plUnits: outcome === 'win' ? 0.7 : -1,
+        oddsAtDecision: -110,
+        stake: 1,
+        league: 'MLB',
+        market: 'Moneyline',
+        selection: `Team ${i}`,
+        eventDate: 'unknown'
+      });
+      settlements.push({
+        betId: `b${i}`,
+        status: 'pending',
+        reasonCode: 'no_event_match',
+        settledAt: '2026-09-18T00:23:01.443Z'
+      });
+    }
+    const doc = review.reviewLedger({ version: 2, scans: [], candidates: [], bets, settlements });
+    const official = doc.official || doc.summary || doc;
+    assert.equal(official.wins, 13);
+    assert.equal(official.losses, 12);
+    assert.equal(official.settled, 25);
+  });
+});

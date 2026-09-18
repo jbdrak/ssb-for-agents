@@ -1064,3 +1064,48 @@ describe('solve — same-ID regressions and provenance gate', () => {
     assert.match(result.reason, /unambiguously identify/);
   });
 });
+
+describe('solve — never downgrades a decided bet to pending', () => {
+  const now = () => '2026-08-06T04:00:00.000Z';
+  // The migrated shape: the outcome lives on the bet, and the start is
+  // unresolvable so no name+date match can ever succeed.
+  const decidedLegacyBet = () =>
+    mlbBet({
+      id: 'bet-legacy',
+      status: 'win',
+      plUnits: 0.77,
+      gameId: undefined,
+      start: undefined,
+      game: 'Nobody vs Unknown'
+    });
+
+  it('skips rather than writing a pending settlement over a decided bet', () => {
+    const ledger = ledgerModule.createLedger();
+    const result = settlement.solve(ledger, { bets: [decidedLegacyBet()], resultData: mlbResult(), now });
+    assert.equal(result.settled.length, 0);
+    assert.equal(result.pending.length, 0, 'no pending row may be written over a decided bet');
+    assert.equal(result.skipped.length, 1);
+    assert.match(result.skipped[0].reason, /already records a decided outcome/);
+    assert.equal((ledger.settlements || []).length, 0, 'the ledger must be left untouched');
+  });
+
+  it('still writes a pending row when the bet has no decided outcome', () => {
+    const ledger = ledgerModule.createLedger();
+    const bet = mlbBet({
+      id: 'bet-open',
+      status: 'pending',
+      gameId: undefined,
+      start: undefined,
+      game: 'Nobody vs Unknown'
+    });
+    const result = settlement.solve(ledger, { bets: [bet], resultData: mlbResult(), now });
+    assert.equal(result.pending.length, 1);
+  });
+
+  it('--force still overrides the guard', () => {
+    const ledger = ledgerModule.createLedger();
+    const result = settlement.solve(ledger, { bets: [decidedLegacyBet()], resultData: mlbResult(), now, force: true });
+    assert.equal(result.skipped.length, 0);
+    assert.equal(result.pending.length, 1);
+  });
+});

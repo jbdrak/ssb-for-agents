@@ -96,6 +96,7 @@
     "capture:close": "node scripts/capture-close.js",
     "fetch:results": "node scripts/fetch-results.js",
     "evaluate": "node scripts/evaluate.js",
+    "repair:settlements": "node scripts/repair-shadow-settlements.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "test:timings": "node test/timings.js",
     "test:ci": "node --test --test-concurrency=1 test/*.test.js",
