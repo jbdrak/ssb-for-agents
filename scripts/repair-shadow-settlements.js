@@ -22,7 +22,6 @@
  */
 
 const fs = require('node:fs');
-const path = require('node:path');
 
 const { loadLedger, saveLedger, defaultLedgerPath } = require('../lib/record-ledger');
 
