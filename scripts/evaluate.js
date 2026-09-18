@@ -25,6 +25,7 @@
 
 const { loadLedger, defaultLedgerPath } = require('../lib/record-ledger');
 const { evaluateLedger } = require('../lib/record-metrics');
+const { gateSweepReport } = require('../lib/gate-shadow');
 
 function pct(value) {
   if (value == null) return 'n/a';
@@ -110,6 +111,25 @@ function formatReport(document, ledgerPath) {
       );
     }
   }
+  const sweep = document.gateSweep;
+  if (sweep && sweep.graded) {
+    out.push('');
+    out.push('Does the EV the gate filters on have any content? (sweep over closed candidates)');
+    if (sweep.insufficientSample) {
+      out.push(`  [insufficient sample: ${sweep.graded} graded close(s); do not read these bands as results]`);
+    }
+    out.push('    minEV%     n   beat    rate    meanCLV');
+    for (const band of sweep.bands) {
+      const beat = `${band.beat}/${band.sample}`;
+      out.push(
+        `    ${String(band.minEvPct).padStart(5)}%${String(band.sample).padStart(6)}${beat.padStart(7)}` +
+          `${(band.rate == null ? 'n/a' : `${(band.rate * 100).toFixed(1)}%`).padStart(8)}` +
+          `${pct(band.meanClvPct).padStart(11)}`
+      );
+    }
+    out.push('  A rising beat rate across bands is evidence the EV signal has content;');
+    out.push('  a flat or falling one means the gate is filtering on noise.');
+  }
   return out.join('\n');
 }
 
@@ -146,9 +166,13 @@ function main() {
     process.exit(1);
   }
   const minSample = flags['min-sample'] != null ? Number(flags['min-sample']) : undefined;
-  const document = evaluateLedger(loaded.ledger, {
-    minSample: Number.isInteger(minSample) && minSample > 0 ? minSample : undefined
-  });
+  const resolvedMinSample = Number.isInteger(minSample) && minSample > 0 ? minSample : undefined;
+  const document = evaluateLedger(loaded.ledger, { minSample: resolvedMinSample });
+  // The gate sweep is the only view that can say whether the EV the card filters on has
+  // any content — beatTheCloseReport measures the raw scan, which includes everything the
+  // gate rejects. Attached here so the daily digest carries it.
+  const gateSweep = gateSweepReport(loaded.ledger, { minSample: resolvedMinSample });
+  document.gateSweep = gateSweep;
 
   if (flags.json) console.log(JSON.stringify({ ledgerPath, ...document }, null, 2));
   else console.log(formatReport(document, ledgerPath));
