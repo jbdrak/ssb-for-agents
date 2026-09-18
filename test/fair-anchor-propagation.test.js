@@ -31,6 +31,7 @@ const LEDGER_BOUND_FIELDS = [
   'sharpMarketFairProbability',
   'sharpFairBookCount',
   'bestAvailableOdds',
+  'arbMarginPct',
   'executionQuality'
 ];
 
@@ -43,11 +44,16 @@ const row = () => ({
   book: 'FanDuel',
   odds: -120,
   bestAvailableOdds: -105,
+  // null is the healthy case: a normal market's implied probabilities sum above 1.
+  arbMarginPct: null,
   executionQuality: 'playable',
   allBookOdds: {
     Pinnacle: { odds1: -120, odds2: 100 },
     Circa: { odds1: -118, odds2: 98 },
-    SomeSquareBook: { odds1: -140, odds2: 120 }
+    // A deliberately soft book, used to prove the all-books fair moves while the
+    // sharp-anchored one does not. Priced so this fixture is NOT an arbitrage: the best
+    // side-1 (-118) plus the best side-2 (+110) sum ABOVE 1, which is the healthy case.
+    SomeSquareBook: { odds1: -145, odds2: 110 }
   }
 });
 
@@ -79,6 +85,18 @@ describe('fair anchor fields survive every whitelist layer', () => {
     // to measure the shopping gap at all.
     assert.equal(mapped.bestAvailableOdds, -105);
     assert.equal(mapped.executionQuality, 'playable');
+    // A null arb margin must survive as null, NOT be dropped: the keep-set assertion
+    // above covers presence, and this covers the value path.
+    assert.equal(mapped.arbMarginPct, null);
+  });
+
+  it('carries a non-null arb margin when the row is arbitrageable', () => {
+    const arbRow = {
+      ...row(),
+      allBookOdds: { BookA: { odds1: 120, odds2: -140 }, BookB: { odds1: -140, odds2: 120 } }
+    };
+    const mapped = mapCandidateRow(arbRow);
+    assert.ok(mapped.arbMarginPct > 9 && mapped.arbMarginPct < 9.2, `got ${mapped.arbMarginPct}`);
   });
 
   it('a missing best available price stays null, never defaulted to the taken price', () => {
