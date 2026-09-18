@@ -25,7 +25,14 @@
 
 const { loadLedger, defaultLedgerPath } = require('../lib/record-ledger');
 const { evaluateLedger } = require('../lib/record-metrics');
-const { gateSweepReport, signalSweepReport, fairAnchorReport, shoppingGapReport } = require('../lib/gate-shadow');
+const {
+  gateSweepReport,
+  signalSweepReport,
+  fairAnchorReport,
+  shoppingGapReport,
+  arbReport
+} = require('../lib/gate-shadow');
+const { DEFAULT_MAX_PLAUSIBLE_MARGIN_PCT } = require('../lib/arb-scan');
 
 function pct(value) {
   if (value == null) return 'n/a';
@@ -175,6 +182,24 @@ function formatReport(document, ledgerPath) {
       out.push('    [insufficient sample: read as direction only]');
     }
   }
+  const arb = document.arbReport;
+  if (arb && arb.scanned) {
+    out.push('');
+    out.push('Arbitrage — the one prediction-free edge (over RECORDED candidates only)');
+    out.push(
+      `  ${arb.opportunities}/${arb.scanned} recorded candidate(s) were arbitrageable` +
+        (arb.opportunities ? ` | best ${pct(arb.bestMarginPct)} | mean ${pct(arb.meanMarginPct)}` : '')
+    );
+    if (arb.suspiciousCount) {
+      out.push(
+        `    [!] ${arb.suspiciousCount} margin(s) exceed ${DEFAULT_MAX_PLAUSIBLE_MARGIN_PCT}% — data errors, not opportunities`
+      );
+    }
+    if (!arb.opportunities) {
+      out.push('    note: this checks only the candidates the scan recorded, so it is NOT');
+      out.push('    a statement that the market had no arbs — finding arbs needs a full-market scan.');
+    }
+  }
   const signals = document.signalSweep;
   if (signals && signals.graded) {
     out.push('');
@@ -254,6 +279,7 @@ function main() {
   document.signalSweep = signalSweepReport(loaded.ledger, { minSample: resolvedMinSample });
   document.fairAnchor = fairAnchorReport(loaded.ledger, { minSample: resolvedMinSample });
   document.shoppingGap = shoppingGapReport(loaded.ledger, { minSample: resolvedMinSample });
+  document.arbReport = arbReport(loaded.ledger);
 
   if (flags.json) console.log(JSON.stringify({ ledgerPath, ...document }, null, 2));
   else console.log(formatReport(document, ledgerPath));
