@@ -82,8 +82,10 @@ function formatReport(document, ledgerPath) {
   const btc = document.beatTheClose;
   out.push('');
   out.push('Beat the close (recorded candidates, not just bets):');
+  const dupNote =
+    btc.uniqueCandidates && btc.uniqueCandidates !== btc.candidates ? ` (${btc.uniqueCandidates} unique)` : '';
   out.push(
-    `  candidates ${btc.candidates} | with a captured close ${btc.sample} | no close ${btc.withoutClose}` +
+    `  candidates ${btc.candidates}${dupNote} | with a captured close ${btc.sample} | no close ${btc.withoutClose}` +
       (btc.withCloseNoPrice ? ` | close but no price ${btc.withCloseNoPrice}` : '')
   );
   if (btc.neverClosable) {
