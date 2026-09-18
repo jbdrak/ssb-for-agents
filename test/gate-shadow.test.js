@@ -3,7 +3,13 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { gateShadowReport, gateSweepReport, signalSweepReport, candidateGateView } = require('../lib/gate-shadow');
+const {
+  gateShadowReport,
+  gateSweepReport,
+  signalSweepReport,
+  fairAnchorReport,
+  candidateGateView
+} = require('../lib/gate-shadow');
 
 let seq = 0;
 
@@ -183,6 +189,61 @@ describe('gate-shadow: signalSweepReport', () => {
     const report = signalSweepReport({
       candidates: [row, { ...row, candidateId: 'dup' }, { ...withQuality(5, 1), clvPct: null }]
     });
+    assert.equal(report.graded, 1);
+  });
+});
+
+describe('fairAnchorReport: all-books EV vs sharp-anchored EV, head to head', () => {
+  // A play priced -110 (decimal 1.9091). The all-books fair has been dragged up to
+  // 0.55 by a soft price in the scan, while the sharp-anchored fair says 0.50.
+  //   all-books EV : 0.55 * 1.9091 - 1 = +5.0%   -> "bet it"
+  //   sharp EV     : 0.50 * 1.9091 - 1 = -4.5%   -> "do not"
+  // This disagreement IS the bug being hunted: the contaminated anchor manufactures
+  // value out of a square number. The report must show the two anchors disagreeing.
+  const contaminated = {
+    candidateId: 'c1',
+    gameId: 'g1',
+    league: 'MLB',
+    market: 'Moneyline',
+    selection: 'Yankees',
+    odds: -110,
+    clvPct: 0.01,
+    featureSnapshot: { marketFairProbability: 0.55, sharpMarketFairProbability: 0.5 }
+  };
+
+  it('shows the anchors disagreeing at the same threshold', () => {
+    const report = fairAnchorReport({ candidates: [contaminated] }, { evThresholds: [2] });
+    assert.equal(report.allBooks[0].sample, 1, 'contaminated anchor sees a +EV play');
+    assert.equal(report.sharp[0].sample, 0, 'sharp-anchored anchor correctly rejects it');
+  });
+
+  it('counts candidates with no sharp fair as missing, never as zero', () => {
+    const noSharp = {
+      ...contaminated,
+      candidateId: 'c2',
+      gameId: 'g2',
+      featureSnapshot: { marketFairProbability: 0.55 }
+    };
+    const report = fairAnchorReport({ candidates: [contaminated, noSharp] }, { evThresholds: [2] });
+    assert.equal(report.graded, 2);
+    assert.equal(report.withoutSharpFair, 1);
+    assert.equal(report.withAllFair, 2);
+    assert.equal(report.insufficientSample, true, 'coverage below minSample must be flagged');
+  });
+
+  it('dedupes the same observation across repeat scans', () => {
+    const report = fairAnchorReport(
+      { candidates: [contaminated, { ...contaminated, candidateId: 'dup', scanId: 'later' }] },
+      { evThresholds: [2] }
+    );
+    assert.equal(report.graded, 1);
+  });
+
+  it('ignores candidates with no close-relative CLV', () => {
+    const report = fairAnchorReport(
+      { candidates: [contaminated, { ...contaminated, candidateId: 'c3', clvPct: null }] },
+      { evThresholds: [2] }
+    );
     assert.equal(report.graded, 1);
   });
 });

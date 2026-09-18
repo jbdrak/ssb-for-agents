@@ -13,7 +13,12 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { fairProbabilityForRow, resolveSideOddsKey } = require('../lib/screen-fair-probability');
+const {
+  fairProbabilityForRow,
+  sharpFairProbabilityForRow,
+  sharpFairDetail,
+  resolveSideOddsKey
+} = require('../lib/screen-fair-probability');
 
 /** A book entry in the live /screen shape: one market's TWO sides. */
 const book = (odds1, odds2) => ({ odds1, odds2, liquidity1: 0, liquidity2: 0 });
@@ -134,5 +139,58 @@ describe('screen-fair-probability: de-vig', () => {
       allBookOdds: map
     });
     assert.ok(Math.abs(sideOne + sideTwo - 1) < 1e-9, 'fair probabilities of both sides must sum to 1');
+  });
+});
+
+describe('screen-fair-probability: the sharp-anchored variant removes soft-book contamination', () => {
+  // The all-books fair averages EVERY book's de-vig, so a square price drags the
+  // "fair" toward square pricing and turns EV into "is this above the average of the
+  // books we already scanned". This variant de-vigs only the sharp comparison set.
+  const sharpMap = {
+    Pinnacle: { odds1: -120, odds2: 100 },
+    Circa: { odds1: -118, odds2: 98 },
+    BookMaker: { odds1: -115, odds2: 95 }
+  };
+  const withSoftBook = { ...sharpMap, SomeSquareBook: { odds1: -140, odds2: 120 } };
+  const row = (allBookOdds) => ({
+    league: 'MLB',
+    market: 'Moneyline',
+    selection: 'Yankees',
+    selection1: 'Yankees',
+    selection2: 'Red Sox',
+    book: 'FanDuel',
+    odds: -120,
+    allBookOdds
+  });
+
+  it('is UNCHANGED by adding a soft book, while the all-books fair moves', () => {
+    const sharpOnly = sharpFairProbabilityForRow(row(sharpMap));
+    const sharpWithSoft = sharpFairProbabilityForRow(row(withSoftBook));
+    assert.ok(Math.abs(sharpOnly - sharpWithSoft) < 1e-12, 'a soft book must not move the sharp fair');
+
+    const allOnly = fairProbabilityForRow(row(sharpMap));
+    const allWithSoft = fairProbabilityForRow(row(withSoftBook));
+    assert.ok(
+      Math.abs(allOnly - allWithSoft) > 0.005,
+      'the all-books fair SHOULD move — that movement is the contamination'
+    );
+  });
+
+  it('reports how many sharp books contributed', () => {
+    assert.equal(sharpFairDetail(row(sharpMap)).sharpBooks, 3);
+    assert.equal(sharpFairDetail(row(withSoftBook)).sharpBooks, 3, 'the soft book is not a contributor');
+  });
+
+  it('FAILS CLOSED and never falls back to the all-books answer', () => {
+    // Only a non-sharp book quotes both legs: the honest answer is null, not the
+    // contaminated number wearing the sharp label.
+    const onlySoft = { SomeSquareBook: { odds1: -140, odds2: 120 } };
+    assert.equal(sharpFairProbabilityForRow(row(onlySoft)), null);
+    assert.notEqual(fairProbabilityForRow(row(onlySoft)), null, 'the all-books version still answers');
+  });
+
+  it('is null when there are no two-sided prices at all', () => {
+    assert.equal(sharpFairProbabilityForRow(row(undefined)), null);
+    assert.equal(sharpFairProbabilityForRow(row({})), null);
   });
 });
