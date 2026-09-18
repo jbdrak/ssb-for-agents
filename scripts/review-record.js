@@ -131,14 +131,17 @@ function betPnlUnits(bet, status, settlement) {
 }
 
 /**
- * Resolve a bet's review status. A linked settlement's status wins over the
- * bet row's own status (settle-record writes the settlement and leaves the
- * bet status 'pending'); otherwise the bet.status field is used.
+ * Resolve a bet's review status. A DECIDED linked settlement wins over the bet
+ * row's own status. A non-decided settlement does NOT: `settle-record` writes a
+ * `pending` row for every bet it cannot match, while `migrate-tracker` stores the
+ * real outcome ON the bet. Letting `pending` win therefore erases a decided
+ * legacy record and reports 0W/0L. Precedence is decided settlement, else the
+ * bet's own status, else pending.
  */
 function resolveStatus(bet, settlement) {
   if (settlement && settlement.status) {
     const s = String(settlement.status).toLowerCase();
-    if (SETTLED.includes(s) || s === 'retirement' || s === 'pending') return s;
+    if (SETTLED.includes(s) || s === 'retirement') return s;
   }
   const b = String(bet.status || 'pending').toLowerCase();
   return SETTLED.includes(b) || b === 'retirement' || b === 'unresolved' ? b : 'pending';

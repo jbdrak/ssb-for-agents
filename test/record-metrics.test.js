@@ -291,3 +291,58 @@ describe('record-metrics: settled rows and the full document', () => {
     assert.equal(metrics.evaluateLedger(ledger, { minSample: 1 }).overall.insufficientSample, false);
   });
 });
+
+describe('record-metrics: a pending settlement must not shadow a decided bet', () => {
+  // Regression: `settle-record` writes a `pending` settlement row for any bet it
+  // cannot match, and migrated bets have an unresolvable start (`eventDate:
+  // 'unknown'`) while carrying their real outcome ON the bet. An earlier version
+  // took the settlement whenever one merely EXISTED, so adding the pending rows
+  // turned a decided 13W/12L legacy record into a reported 0W/0L.
+  const ledgerWith = (settlementStatus) => ({
+    version: 2,
+    scans: [],
+    candidates: [],
+    bets: [
+      { id: 'b1', status: 'win', plUnits: 0.77, oddsAtDecision: -130, stake: 1, league: 'MLB', market: 'Moneyline' }
+    ],
+    settlements: [{ betId: 'b1', status: settlementStatus, reasonCode: 'no_event_match' }]
+  });
+
+  it('counts the bet own outcome when the settlement is pending', () => {
+    const rows = metrics.settledRows(ledgerWith('pending'));
+    assert.equal(rows.length, 1, 'the decided bet must still produce a row');
+    assert.equal(rows[0].outcome, 'win');
+  });
+
+  it('still lets a DECIDED settlement win', () => {
+    const rows = metrics.settledRows(ledgerWith('loss'));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].outcome, 'loss', 'a real settlement must override the bet status');
+  });
+
+  it('reports the legacy 13W/12L record as decided, not as zero', () => {
+    const bets = [];
+    const settlements = [];
+    for (let i = 0; i < 25; i += 1) {
+      const outcome = i < 13 ? 'win' : 'loss';
+      bets.push({
+        id: `b${i}`,
+        status: outcome,
+        plUnits: outcome === 'win' ? 0.7 : -1,
+        oddsAtDecision: -110,
+        stake: 1,
+        league: 'MLB',
+        market: 'Moneyline'
+      });
+      // Exactly what the cron wrote for these bets.
+      settlements.push({ betId: `b${i}`, status: 'pending', reasonCode: 'no_event_match' });
+    }
+    const overall = metrics.evaluateLedger(
+      { version: 2, scans: [], candidates: [], bets, settlements },
+      { minSample: 30 }
+    ).overall;
+    assert.equal(overall.wins, 13);
+    assert.equal(overall.losses, 12);
+    assert.ok(overall.wins + overall.losses === 25);
+  });
+});
