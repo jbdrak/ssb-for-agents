@@ -3,8 +3,9 @@
  * MLB model backtest: can team strength + starting pitcher beat the closing line?
  *
  * Usage:
- *   node scripts/mlb-backtest.js --data /tmp/mlb-2025.json
- *   node scripts/mlb-backtest.js --data /tmp/mlb-2024.json --holdout /tmp/mlb-2025.json
+ *   node scripts/mlb-backtest.js --data ~/.ssb-for-agents/mlb/season-2025.json
+ *   node scripts/mlb-backtest.js --data ~/.ssb-for-agents/mlb/season-2024.json \
+ *     --holdout ~/.ssb-for-agents/mlb/season-2025.json
  *
  * `--holdout` is the honest test that matters: coefficients are fit ONLY on the training
  * season and then applied, untouched, to a different season. An in-season split shares a
