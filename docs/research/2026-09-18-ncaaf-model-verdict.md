@@ -283,6 +283,71 @@ a public input it has missed is not a matter of looking harder.
 
 _(Reproduce: `npm run weather:join` then `node scripts/weather-test.js`.)_
 
+## Part 5: a documented, peer-reviewed strategy — tested, and it fails
+
+I was challenged on why I can't find data myself. Fair. So I went looking for a **published,
+replicable mechanism**, not more raw data. Found one:
+
+> **Simon, J. (2024). "Inefficient Forecasts at the Sportsbook: An Analysis of Real-Time Betting
+> Line Movement." _Management Science_ 70(12): 8583-8611.** 3,681 MLB games, four sportsbooks.
+> _"betting lines tend to **overreact**, exhibiting significant **negatively autocorrelated
+> changes**"_, with a documented strategy: _"bet on the team whose price has decreased whenever
+> the magnitude of line movement in the last 90 minutes before a weekend day game exceeds a
+> threshold. Strategies using thresholds of 0.005, 0.010, 0.015, and 0.020 all yielded returns
+> between 10 and 13 percent."_
+
+That is **fading the move** — the opposite of steam-following, which I had already tested and
+which failed. A genuinely different hypothesis, from a top journal.
+
+### What I tested, and the limitation I have to state
+
+The paper's effect is specific to movement **in the last 90 minutes**. I have no intraday
+ticks — only **open and close**. So I tested the _broader_ claim (negatively autocorrelated
+line changes) on the open→close move, plus the paper's weekend-day restriction. **This is not
+the paper's mechanism**, and I'm flagging that rather than pretending otherwise.
+
+Sample: 4,895 MLB games and 1,987 CFB games with open+close moneylines. (MLB 2023 is excluded —
+ESPN has **no open lines** for it at all, 0 of 2,436.)
+
+### Result: both directions lose
+
+|                           | hit        | implied    | z                | ROI                |
+| ------------------------- | ---------- | ---------- | ---------------- | ------------------ |
+| MLB **fade**, all games   | 44.9-47.0% | 46.8-48.8% | **-1.5 to -2.4** | **-4.0% to -5.5%** |
+| MLB **follow**, all games | 53.0-55.1% | 55.5-57.5% | **-2.1 to -3.3** | **-3.8% to -4.8%** |
+| CFB **fade**, all games   | 50.8-51.8% | 51.3-52.7% | -0.2 to -1.3     | **-3.8% to -7.6%** |
+| CFB **follow**, all games | 48.2-49.2% | 51.6-53.0% | **-2.1 to -2.5** | **-6.0% to -8.7%** |
+
+Fading loses. Following loses. Neither is close. Cross-season on the MLB fade at threshold
+0.01: **2024 -5.65%, 2025 -3.47%** — consistently negative, not one bad season.
+
+### The one honest thread worth pulling
+
+Restricting to **weekend day games — the paper's own condition** — the MLB fade was the _only_
+configuration anywhere near break-even (-0.62% to -1.86%, z between -0.37 and +0.41), against
+-4% to -5.5% for all games.
+
+That is directionally consistent with the paper's claim that the effect lives specifically in
+weekend day games. It is also **not significant, not profitable, and not a strategy.** I'm
+reporting it because it's the honest reading of the data, not because it's a lead.
+
+### Why the discrepancy, stated plainly
+
+Three candidate explanations, and I can't separate them with the data I have:
+
+1. **My test isn't the paper's test.** Last-90-minutes movement is a different signal from a
+   full-day open→close move. This is the most likely explanation and the one I can't rule out.
+2. **Multiple testing.** The paper ran **120 strategies** and says so; a handful of nominally
+   significant results among 120 is expected. Its one significant result at p=0.014 rested on
+   **n=313 games**.
+3. **Market and era.** The paper used four sportsbooks; I'm on ESPN BET's lines, and the market
+   has had years to sharpen.
+
+**The honest bottom line: I tested the testable version of a published profitable strategy and
+it does not reproduce here.** To test the actual mechanism I'd need intraday line ticks, which
+means collecting them going forward — a live poller, and given the ban risk that already forced
+me to pause the close-capture job, that's a decision for James, not for me.
+
 ## Four markets, one answer
 
 | market        | games | decisive check                                  | ROI              | bootstrap |

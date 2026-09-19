@@ -113,7 +113,8 @@
     "spread:validate": "node scripts/spread-validate.js",
     "totals:validate": "node scripts/totals-validate.js",
     "weather:join": "node scripts/weather-join.js",
-    "weather:test": "node scripts/weather-test.js"
+    "weather:test": "node scripts/weather-test.js",
+    "fade:test": "node scripts/fade-move-test.js"
   },
   "dependencies": {
     "got-scraping": "^4.2.1"
