@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- feat: **an external data source, found and tested — weather. It is real, and fully priced.** The fair challenge was that finding data is my job, not the user's, so: ESPN venue data (city/state + an `indoor` flag, 100% coverage, 263 domes), Open-Meteo geocoding, and Open-Meteo's free historical archive (hourly temperature, wind speed/direction, precipitation, averaged over the game window). **4,117 of 4,521 outdoor games got weather (91%)**; indoor venues are explicitly marked weather-immune so a dome never receives outdoor conditions.
+
+  The test that matters is not "does weather affect scoring" — it does. It is **does adding weather get the model's error below the line's?** Measured, on 2,874 games:
+
+  - **Wind is real**: 50.17 mean total when ≥15mph vs 54.05 when calm — a **3.88-point** suppression. Cold (<45F) is 2.42 points below warm (≥65F).
+  - **The market already prices it, and then some**: the closing line sits **4.09 points** lower on windy games (49.14 vs 53.23) against a **3.88-point** real effect. Fully priced, arguably over-adjusted.
+  - **Weather beats the line in 0 of 20 season pairs.** It improves the model by hundredths of a point and never closes a ~0.5-point gap.
+
+  This is the cleanest demonstration of the thesis in the whole exercise, because it quantifies both sides: true effect 3.88 points, market adjustment 4.09 points. **The lesson generalises — the closing line is already an excellent model of public information, so finding a public input it has missed is not a matter of looking harder.**
+
+  Also fixed: the weather fetch initially cached FAILURES as null, and a throttle burst left whole seasons at 0-11% coverage (2,031 of 4,521). Same bug class as the collector race — caching a failure makes it permanent. Failures are no longer cached, plus a retry and gentler concurrency. `scripts/weather-join.js`, `scripts/weather-test.js`, Part 4 of the CFB writeup.
+
 - feat: **totals, the fourth market — and the last one testable without new data.** 4,363 CFB games were already priced for over/under, so this needed no re-fetch. Same decisive check as spreads: the line _is_ a total prediction, and **the model beats the line on total MAE in 0 of 20 season pairs**. Betting: hit rate 50.7-51.5%, ROI **-1.67% to -3.21%**, **0.0% of 2,000 bootstrap resamples profitable**, placebo range -6.27% to -3.60%. This is the _least bad_ of the four markets, which is still not profitable — at -110 you need 52.4% to break even and it delivers 51.4%.
 
   **Four markets now, one answer.** MLB moneyline (-4.37%), CFB moneyline (-0.67% to -2.20%), CFB spread (-4.46% to -5.09%), CFB totals (-1.67% to -3.21%) — every one loses, 0.0% bootstrap profitable, and the cause is identical: **the market's own line out-predicts the model on the same public inputs.** For the two line markets the test is direct and devastating: the line's MAE beats the model's in **40 of 40** season pairs combined. That is not a tuning problem.

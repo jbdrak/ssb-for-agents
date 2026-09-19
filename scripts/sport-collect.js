@@ -88,12 +88,24 @@ async function fetchDay(date) {
         starterId: c.probables?.[0]?.athlete?.id ?? null,
         starterName: c.probables?.[0]?.athlete?.fullName ?? null
       });
+      // Venue, for joining weather. `indoor` matters as much as the location: a dome is
+      // weather-immune, so including it in a weather feature would add pure noise.
+      const v = comp.venue;
       return {
         eventId: ev.id,
         date,
         startDate: comp.startDate,
         completed: comp.status?.type?.completed === true,
         neutralSite: comp.neutralSite === true,
+        venue: v
+          ? {
+              id: v.id ?? null,
+              name: v.fullName ?? null,
+              city: v.address?.city ?? null,
+              state: v.address?.state ?? null,
+              indoor: v.indoor === true
+            }
+          : null,
         home: side(home),
         away: side(away)
       };
