@@ -705,3 +705,38 @@ describe('buildScanFingerprint', () => {
     assert.equal(buildScanFingerprint(numeric), buildScanFingerprint(string));
   });
 });
+
+describe('the execution book is recorded', () => {
+  // `book` is the book whose price we would actually take. It was null on every candidate
+  // even though the scan payload carried the target book, which made the sharp-move-lag
+  // question ("did we bet a book that had not repriced yet?") unanswerable — the record
+  // never said which book we would have bet.
+  const block = (play, extra = {}) => [{ league: 'MLB', market: 'Moneyline', plays: [play], ...extra }];
+
+  it('reads play.book when the row carries it', () => {
+    const [c] = normalizeScanCandidates(block({ gameId: 'g1', selection: 'A', odds: -110, book: 'Pinnacle' }));
+    assert.equal(c.featureSnapshot.book, 'Pinnacle');
+  });
+
+  it('falls back to play.targetBook', () => {
+    const [c] = normalizeScanCandidates(block({ gameId: 'g1', selection: 'A', odds: -110, targetBook: 'NoVigApp' }));
+    assert.equal(c.featureSnapshot.book, 'NoVigApp');
+  });
+
+  it('falls back to the block book', () => {
+    const [c] = normalizeScanCandidates(block({ gameId: 'g1', selection: 'A', odds: -110 }, { book: 'DraftKings' }));
+    assert.equal(c.featureSnapshot.book, 'DraftKings');
+  });
+
+  it('prefers the most specific source, and stays null when none is present', () => {
+    const [specific] = normalizeScanCandidates(
+      block(
+        { gameId: 'g1', selection: 'A', odds: -110, book: 'Pinnacle', targetBook: 'NoVigApp' },
+        { book: 'DraftKings' }
+      )
+    );
+    assert.equal(specific.featureSnapshot.book, 'Pinnacle', 'play.book wins over targetBook and block');
+    const [none] = normalizeScanCandidates(block({ gameId: 'g1', selection: 'A', odds: -110 }));
+    assert.equal(none.featureSnapshot.book, null, 'never invents a book');
+  });
+});
