@@ -17,7 +17,7 @@ SSB MCP is a Model Context Protocol server that lets AI agents see what the shar
 
 Connect it to Claude Desktop, Cursor, Cline, Hermes, or any MCP client. Requires a [PropProfessor](https://propprofessor.com) account — the **free tier is enough**; no paid subscription needed.
 
-> **Honest scope — no profitability claim:** SSB MCP is a sharp-signal DISCOVERY and RATING tool. `tier` / `kaiCall` / `edge` / `screenScore` are signal-quality ratings, not win-probability predictions. Profitability is UNPROVEN — no settled-results backtest has been published yet. Use it to find candidate plays and validate them yourself; do not treat outputs as a guaranteed winning system. The ranking pipeline surfaces _what sharp books are doing_; the betting decision stays with you.
+> **Honest scope — measured, not merely unproven:** SSB MCP is a sharp-signal DISCOVERY and RATING tool. `tier` / `kaiCall` / `edge` / `screenScore` are signal-quality ratings, not win-probability predictions. **A settled-results backtest now exists and it does NOT support an edge.** Across 186 measured closing lines the ranking beat the close **20.4%** of the time (95% CI 15.3–26.8%) with a mean CLV of **-0.94%**, and its own top confidence tier performed **worst**. The read got _worse_ as the sample grew — the signature of an artifact, not an edge. Use it to see what sharp books are doing; do not treat outputs as a winning system. `docs/STATUS.md` carries the full measurement, what was ruled out first, and the two lanes that ARE supported (promotions and cross-venue arbitrage — neither of which is prediction). The ranking pipeline surfaces _what sharp books are doing_; the betting decision stays with you.
 
 ## What this project demonstrates
 
