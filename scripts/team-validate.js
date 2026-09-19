@@ -135,25 +135,36 @@ console.log('                  beating the raw price but not the de-vigged numbe
 console.log('                  coming back, not forecasting better.');
 console.log('');
 console.log('  thresh    bets    hit      vs RAW   z      vs DE-VIG  z      ROI      +/-1se    CLV');
+// Each test game is scored ONCE, using the MEAN model probability across every training-season
+// fit. The previous version looped over season PAIRS, which put each test game into the pool
+// four times (once per training season). Duplicates are not independent: they inflated the
+// sample 4x, which in turn made the z-scores and the bootstrap absurdly confident -- it
+// reported z=4.75 and "100% of resamples profitable" for a model that is WORSE than the market
+// on Brier in 17 of 20 season pairs. Deduplicating is what makes the significance honest.
+const ensembleRows = (te) =>
+  rowsBySeason[te].map((r) => {
+    const ps = SEASONS.filter((tr) => tr !== te)
+      .map((tr) => probFor(r, tr))
+      .filter((p) => p != null);
+    return ps.length ? { ...r, ensP: ps.reduce((a, b) => a + b, 0) / ps.length } : { ...r, ensP: null };
+  });
+
 const pooled = {};
-for (const t of THRESHOLDS) pooled[t] = { n: 0, wins: 0, rawSum: 0, dvSum: 0, pnl: 0, returns: [], clvN: 0, clvSum: 0 };
-for (const tr of SEASONS) {
-  for (const te of SEASONS) {
-    if (te === tr) continue;
-    for (const t of THRESHOLDS) {
-      const s = simulateBets(rowsBySeason[te], (r) => probFor(r, tr), { threshold: t });
-      if (!s.n) continue;
-      const p = pooled[t];
-      p.n += s.n;
-      p.wins += s.wins;
-      p.rawSum += s.impliedRate * s.n;
-      p.dvSum += s.devigRate * s.n;
-      p.pnl += s.pnl;
-      p.returns.push(...Array.from({ length: s.n }, () => s.roi));
-      if (s.clv != null) {
-        p.clvSum += s.clv * s.n;
-        p.clvN += s.n;
-      }
+for (const t of THRESHOLDS) pooled[t] = { n: 0, wins: 0, rawSum: 0, dvSum: 0, pnl: 0, clvN: 0, clvSum: 0 };
+for (const te of SEASONS) {
+  const test = ensembleRows(te).filter((r) => r.ensP != null && r.marketHome != null);
+  for (const t of THRESHOLDS) {
+    const s = simulateBets(test, (r) => r.ensP, { threshold: t });
+    if (!s.n) continue;
+    const p = pooled[t];
+    p.n += s.n;
+    p.wins += s.wins;
+    p.rawSum += s.impliedRate * s.n;
+    p.dvSum += s.devigRate * s.n;
+    p.pnl += s.pnl;
+    if (s.clv != null) {
+      p.clvN += s.n;
+      p.clvSum += s.clv * s.n;
     }
   }
 }
@@ -178,20 +189,17 @@ for (const t of THRESHOLDS) {
 // ---------- 4. bootstrap ----------
 const REF = 0.07;
 const base = [];
-for (const tr of SEASONS) {
-  for (const te of SEASONS) {
-    if (te === tr) continue;
-    for (const r of rowsBySeason[te]) {
-      const p = probFor(r, tr);
-      if (p == null) continue;
-      const eh = p - r.marketHome;
-      const side = eh > REF ? 'home' : -eh > REF ? 'away' : null;
-      if (!side) continue;
-      const ml = Number(side === 'home' ? r.homeCloseMl : r.awayCloseMl);
-      if (!Number.isFinite(ml) || ml === 0) continue;
-      const won = side === 'home' ? r.homeWon : !r.homeWon;
-      base.push(won ? payout(ml) : -1);
-    }
+for (const te of SEASONS) {
+  for (const r of ensembleRows(te)) {
+    const p = r.ensP;
+    if (p == null || r.marketHome == null) continue;
+    const eh = p - r.marketHome;
+    const side = eh > REF ? 'home' : -eh > REF ? 'away' : null;
+    if (!side) continue;
+    const ml = Number(side === 'home' ? r.homeCloseMl : r.awayCloseMl);
+    if (!Number.isFinite(ml) || ml === 0) continue;
+    const won = side === 'home' ? r.homeWon : !r.homeWon;
+    base.push(won ? payout(ml) : -1);
   }
 }
 console.log('');
@@ -220,15 +228,11 @@ console.log('');
 console.log('=== 5. PLACEBO: same disagreement spread, ZERO information ===');
 let sq = 0,
   cnt = 0;
-for (const tr of SEASONS) {
-  for (const te of SEASONS) {
-    if (te === tr) continue;
-    for (const r of rowsBySeason[te]) {
-      const p = probFor(r, tr);
-      if (p == null) continue;
-      sq += (p - r.marketHome) ** 2;
-      cnt += 1;
-    }
+for (const te of SEASONS) {
+  for (const r of ensembleRows(te)) {
+    if (r.ensP == null || r.marketHome == null) continue;
+    sq += (r.ensP - r.marketHome) ** 2;
+    cnt += 1;
   }
 }
 const modelSd = Math.sqrt(sq / cnt);
@@ -247,29 +251,26 @@ function placebo(draw) {
     wins = 0,
     dvSum = 0,
     pnl = 0;
-  // Iterate the SAME season pairs as the real model, so the pick count is comparable. A
-  // placebo evaluated on a different sample size cannot be compared to the real result.
-  for (const tr of SEASONS) {
-    for (const te of SEASONS) {
-      if (te === tr) continue;
-      for (const r of rowsBySeason[te]) {
-        const key = `${te}|${r.startDate}|${r.home.name}|${r.away.name}`;
-        if (!noise.has(key)) noise.set(key, gauss() * modelSd);
-        const p = Math.min(0.99, Math.max(0.01, r.marketHome + noise.get(key)));
-        const eh = p - r.marketHome;
-        const side = eh > REF ? 'home' : -eh > REF ? 'away' : null;
-        if (!side) continue;
-        const ml = Number(side === 'home' ? r.homeCloseMl : r.awayCloseMl);
-        const dv = devigPrices(r.homeCloseMl, r.awayCloseMl);
-        if (!Number.isFinite(ml) || !dv) continue;
-        const won = side === 'home' ? r.homeWon : !r.homeWon;
-        n += 1;
-        dvSum += side === 'home' ? dv.home : dv.away;
-        if (won) {
-          wins += 1;
-          pnl += payout(ml);
-        } else pnl -= 1;
-      }
+  // Each game enters ONCE, matching the deduplicated real-model pool.
+  for (const te of SEASONS) {
+    for (const r of ensembleRows(te)) {
+      if (r.marketHome == null) continue;
+      const key = `${te}|${r.startDate}|${r.home.name}|${r.away.name}`;
+      if (!noise.has(key)) noise.set(key, gauss() * modelSd);
+      const p = Math.min(0.99, Math.max(0.01, r.marketHome + noise.get(key)));
+      const eh = p - r.marketHome;
+      const side = eh > REF ? 'home' : -eh > REF ? 'away' : null;
+      if (!side) continue;
+      const ml = Number(side === 'home' ? r.homeCloseMl : r.awayCloseMl);
+      const dv = devigPrices(r.homeCloseMl, r.awayCloseMl);
+      if (!Number.isFinite(ml) || !dv) continue;
+      const won = side === 'home' ? r.homeWon : !r.homeWon;
+      n += 1;
+      dvSum += side === 'home' ? dv.home : dv.away;
+      if (won) {
+        wins += 1;
+        pnl += payout(ml);
+      } else pnl -= 1;
     }
   }
   if (!n) return;
@@ -286,22 +287,26 @@ for (const d of [1, 2, 3]) placebo(d);
 // ---------- 6. ablation ----------
 console.log('');
 console.log('=== 6. ABLATION (which input carries the result?) ===');
-// Uses the SAME season-pair pooling as sections 3-5, so the pick counts are comparable.
-function measure(label, fn) {
+// Leave-one-out ablation: for each held-out season, fit on the OTHER seasons only, then bet
+// each held-out game once. The earlier version fit on ALL rows (including the games it then
+// scored) and pooled over season pairs, so it was both in-sample and 4x-duplicated.
+function measure(label, ablate) {
   let n = 0,
     wins = 0,
     dvSum = 0,
     pnl = 0;
-  for (const tr of SEASONS) {
-    for (const te of SEASONS) {
-      if (te === tr) continue;
-      const s = simulateBets(rowsBySeason[te], (r) => fn(r, tr), { threshold: REF });
-      if (!s.n) continue;
-      n += s.n;
-      wins += s.wins;
-      dvSum += s.devigRate * s.n;
-      pnl += s.pnl;
-    }
+  for (const te of SEASONS) {
+    const train = SEASONS.filter((tr) => tr !== te)
+      .flatMap((s) => rowsBySeason[s])
+      .map(ablate);
+    const fit = fitCoefficients(train);
+    const test = ensembleRows(te).filter((r) => r.marketHome != null);
+    const s = simulateBets(test, (r) => modelProbability(ablate(r), fit), { threshold: REF });
+    if (!s.n) continue;
+    n += s.n;
+    wins += s.wins;
+    dvSum += s.devigRate * s.n;
+    pnl += s.pnl;
   }
   if (!n) return console.log(`  ${label.padEnd(26)} no bets`);
   const hit = wins / n;
@@ -312,10 +317,9 @@ function measure(label, fn) {
       `(z=${z.toFixed(2)})  ROI ${(pnl / n) * 100 >= 0 ? '+' : ''}${((pnl / n) * 100).toFixed(2)}%`
   );
 }
-const fit0 = fitCoefficients(allRows);
-measure('full model', (r) => modelProbability(r, fit0));
-measure('strength only', (r) => modelProbability({ ...r, homeStarterRa: null, awayStarterRa: null }, fit0));
-measure('starter only', (r) => modelProbability({ ...r, homeStrength: 0.5, awayStrength: 0.5 }, fit0));
+measure('full model', (r) => r);
+measure('strength only', (r) => ({ ...r, homeStarterRa: null, awayStarterRa: null }));
+measure('starter only', (r) => ({ ...r, homeStrength: 0.5, awayStrength: 0.5 }));
 
 console.log('');
 console.log('Reading the whole thing: an edge needs the DE-VIGGED column positive with |z| >= 2,');
