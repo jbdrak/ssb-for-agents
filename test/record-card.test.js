@@ -107,6 +107,14 @@ describe('record-card: BET promotion', () => {
     assert.equal(current.candidates[0].decisionAt, '2026-08-04T02:30:00.000Z');
   });
 
+  it('stamps tier and movement tags top-level so stats splits never read unknown', () => {
+    const current = makeLedger();
+    const result = recordCard.promoteCard(current, baseCard(), { now: () => '2026-08-04T02:30:00.000Z' });
+    assert.equal(result.ok, true);
+    assert.equal(result.bet.tier, 'A');
+    assert.equal(result.bet.movement, '+5');
+  });
+
   it('keeps the decision timestamp separate from the event start time', () => {
     const current = makeLedger();
     const result = recordCard.promoteCard(current, baseCard(), { now: () => '2026-08-04T02:30:00.000Z' });
