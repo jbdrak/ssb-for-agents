@@ -53,6 +53,9 @@ the correct output, not a bug.
 
 1. **Promotions.** Structurally +EV before any game is known — a profit boost is worth
    `S·(k−1)·(1−1/d)`. Small per offer, but the edge is arithmetic.
+   **Tool: `npm run promo:card`** (hands it a `pp scan -j` capture plus the offer terms and
+   returns the best qualifying card, ranked on devigged probability, with the ceiling
+   stated up front).
 2. **Cross-venue arbitrage.** The one documented prediction-free edge, and `npm run arbs`
    finds real ones: measured live at **4 opportunities across 1,248 rows, 0.46–0.82%**,
    including the predicted bookmaker-vs-**exchange** shape (Polymarket against a book).
