@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- feat: **the spread market, on 1.6x the data — and the cleanest "no" of the whole exercise.** The CFB moneyline result was a near-miss, so the obvious next question was the **spread** market, where ESPN carries prices for games that have no moneyline at all (4,784 priced games vs 3,025). It fails, and the reason is simpler than any ROI figure: **the line IS a margin prediction, and the model predicts margins worse than the line in 20 of 20 season pairs** (MAE ~12.9-13.9 vs the line's ~11.7-12.5). A model that is worse at forecasting margins cannot beat the line by thresholding.
+
+  Betting confirms it: hit rate **49.8% to 50.1% across ~8,000 bets** — a literal coin flip at every threshold — with ROI **-4.46% to -5.09%**, **0.0% of 2,000 bootstrap resamples profitable**, negative CLV (-0.60 to -0.92 points, i.e. the line moves _against_ the model), and a placebo range (-8.79% to +1.29%) that contains the model's -4.61%.
+
+  **Two things were verified rather than assumed**, both of which would have silently inverted or destroyed the result: the spread **sign convention** (ESPN is home-perspective; home covers 49.1%, corr 0.620 with the actual margin — now enforced by `assertSpreadConvention`), and a real **extraction bug** where `homeTeamOdds.open.spread` was read as the point line when it is actually the _decimal price_ (1.91 for -110). The giveaway was CLV printing exactly `0.00` at every threshold. The line lives at `open.pointSpread.alternateDisplayValue`; after the fix, 1,869 of 2,864 games show a moved line with realistic values (`8.5 -> 7`, `-13 -> -16`).
+
+  Also fixed in the collector: it filtered output on the _moneyline_, which discarded every spread-only game before it could be considered — the exact sample a spread model exists to reach. `lib/spread-model.js` (19 tests), `scripts/spread-validate.js`.
+
+  **Across all three markets now tested — MLB moneyline, CFB moneyline, CFB spread — none is profitable.** The cause is structural and consistent: every free input is already in the price. Full writeup: `docs/research/2026-09-18-ncaaf-model-verdict.md` (Part 2).
+
 - feat: **an honest MLB model, and the honest answer: it does not beat the closing line.** The scan could never have had an edge - it de-vigged public prices and compared them to public prices, which is circular by construction. The only path that does not require private information is a model whose inputs are independent of the price it is compared against. So this builds one (log5 on Pythagorean team strength + a starting-pitcher term + home field), validates it across **three full seasons and 7,147 priced games**, and reports what it actually does. **Verdict: NO EDGE.** Pooled out-of-sample across all six season pairs, the model's ROI is **-4.37%** - which _is_ the market's hold, the signature of a strategy with zero information. It is _worse_ than the market on Brier and log loss in all six pairs. Bootstrap: **0.0% of 2,000 resamples profitable.** Full writeup in `docs/research/2026-09-18-mlb-model-verdict.md`.
 
   **Three bugs had to be found first, and two of them were manufacturing fake alpha:**

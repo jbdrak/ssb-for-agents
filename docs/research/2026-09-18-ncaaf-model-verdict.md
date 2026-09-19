@@ -122,3 +122,88 @@ node scripts/sport-collect.js --sport football --league college-football \
 node scripts/team-validate.js --league college-football \
   --seasons 2021,2022,2023,2024,2025 --exponent 2.37 --min-games 3
 ```
+
+---
+
+# Part 2: the spread market (1.6x the data) — also no edge
+
+The moneyline result was a near-miss, so the obvious next question was whether the **spread**
+market — where ESPN carries prices for games that have no moneyline at all — behaves
+differently. It reaches **4,784 priced games versus 3,025**, a 58% larger sample.
+
+**It does not. The spread model has no edge, and the reason is stated more cleanly here than
+anywhere else in this work.**
+
+## The decisive check: is the model a better margin predictor than the line?
+
+The line **is** a margin prediction. So before any betting simulation, compare mean absolute
+error on the actual margin:
+
+|                     | MAE               |
+| ------------------- | ----------------- |
+| model               | ~12.9 to 13.9     |
+| **the line itself** | **~11.7 to 12.5** |
+
+**The line beats the model on margin MAE in 20 of 20 season pairs, and the model beats it in 0.** It is worse by 0.7 to 1.4 points per game, consistently, in every direction.
+
+That is a stronger and simpler statement than any ROI figure: a model that predicts margins
+worse than the line already is cannot beat the line by thresholding, no matter where the
+threshold is set.
+
+## Betting results (pooled, all 20 season pairs, real prices)
+
+| threshold | bets   | W-L-P         | hit   | ROI        | CLV (pts) |
+| --------- | ------ | ------------- | ----- | ---------- | --------- |
+| 1.0       | 10,930 | 5400-5386-144 | 50.1% | **-4.46%** | -0.60     |
+| 2.0       | 9,294  | 4592-4581-121 | 50.1% | **-4.51%** | -0.69     |
+| 3.0       | 7,849  | 3881-3878-90  | 50.0% | **-4.61%** | -0.76     |
+| 4.0       | 6,443  | 3196-3183-64  | 50.1% | **-4.47%** | -0.83     |
+| 5.0       | 5,233  | 2578-2602-53  | 49.8% | **-5.09%** | -0.92     |
+
+**The hit rate is a coin flip at every threshold** — 49.8% to 50.1%, across ~8,000 bets. That
+is the signature of a model with no information: it selects games where it disagrees with the
+line, and lands on the right side of a 50/50 proposition exactly half the time.
+
+- **Bootstrap: 0.0% of 2,000 resamples profitable.** Median ROI -5.10%.
+- **CLV is negative (-0.60 to -0.92 points):** the line moves _against_ the model's picks.
+- **Placebo:** zero-information draws return -5.44%, -8.79% and +1.29%. The real model's
+  -4.61% sits inside that range.
+
+## Verified, not assumed
+
+Two things were checked before any of the above was trusted:
+
+- **Spread sign convention.** ESPN reports a home-perspective spread, so `-37` means home is
+  favoured by 37 and home must win by 37. Confirmed: home covers **49.1%** of games and the
+  line correlates **0.620** with the actual margin. If this had been inverted, every result
+  would have been silently reversed. `assertSpreadConvention` now enforces it.
+- **Data sanity.** Backing the favourite against the spread returns **-2.57%** over 3,115
+  bets. Negative and near the hold, as it must be.
+
+**A bug worth recording:** the first extraction read `homeTeamOdds.open.spread`, which is the
+**decimal price** (1.91 for -110), not the point line. The giveaway was CLV printing exactly
+`0.00` at every threshold — plausible-looking values (1.91 -> 1.95) that silently destroyed
+the metric. The line actually lives at `open.pointSpread.alternateDisplayValue`. After fixing
+it, 1,869 of 2,864 games show a moved line with realistic values (`8.5 -> 7`, `-13 -> -16`).
+
+## Part 2 bottom line
+
+**No.** A coin-flip hit rate, -4.5% ROI, 0% bootstrap profitability, negative CLV, and — most
+decisively — a model that predicts margins worse than the market's own line in every one of
+20 season pairs.
+
+## Where this leaves the overall question
+
+Three markets tested with the same machinery:
+
+| market        | de-vigged edge                        | ROI              | bootstrap | verdict                      |
+| ------------- | ------------------------------------- | ---------------- | --------- | ---------------------------- |
+| MLB moneyline | +0.16pts (z=0.24)                     | -4.37%           | 0.0%      | no edge                      |
+| CFB moneyline | +1.45 to +1.89pts (z=2.25-2.55)       | -0.67% to -2.20% | 0.0%      | trace of signal, still loses |
+| CFB spread    | — (worse than the line on MAE, 20/20) | -4.46% to -5.09% | 0.0%      | no edge                      |
+
+**None is profitable.** The pattern is consistent and the cause is structural: every input
+available for free is already in the price, so the model cannot forecast better than the
+market and pays the vig. CFB moneylines came closest, and the honest read there is that the
+apparent signal is partly a selection artifact — the model is _worse_ than the market at
+forecasting while showing a betting edge, which is not what real skill looks like.

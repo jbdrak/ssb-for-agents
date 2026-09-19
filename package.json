@@ -109,7 +109,8 @@
     "install:verify": "node --test \"test/quick-screen-cache.test.js\" \"test/ask-routes.test.js\" \"test/ssb-tool-definitions.test.js\" \"test/place-bet.test.js\" \"test/today.test.js\" \"test/pipeline.test.js\" \"test/ssb-verbosity-param.test.js\" \"test/ssb-mcp-server-meta.test.js\" \"test/ssb-mcp-server-stderr.test.js\"",
     "prepublishOnly": "npm run check:package && npm run check:publish-tree",
     "sport:collect": "node scripts/sport-collect.js",
-    "team:validate": "node scripts/team-validate.js"
+    "team:validate": "node scripts/team-validate.js",
+    "spread:validate": "node scripts/spread-validate.js"
   },
   "dependencies": {
     "got-scraping": "^4.2.1"

@@ -116,12 +116,47 @@ async function fetchOdds(game) {
       const items = (json.items || []).filter((i) => i.homeTeamOdds && i.awayTeamOdds);
       const it = items[0];
       if (it) {
+        const num = (x) => {
+          const n = Number(x);
+          return Number.isFinite(n) ? n : null;
+        };
+        const point = (x) => {
+          if (x == null) return null;
+          if (typeof x === 'object') return num(x.value ?? x.displayValue);
+          return num(x);
+        };
+        // The spread LINE inside an open/close block is NOT `spread` -- that is the decimal
+        // PRICE (1.91 for -110). The line lives under `pointSpread.alternateDisplayValue`.
+        // Reading the wrong one yields plausible-looking decimals (1.91 -> 1.95) that quietly
+        // destroy any CLV calculation, which is exactly what happened here.
+        const line = (x) => {
+          if (x == null) return null;
+          if (typeof x !== 'object') return num(x);
+          const ps = x.pointSpread;
+          if (ps == null) return null;
+          if (typeof ps === 'object') return num(ps.alternateDisplayValue ?? ps.american ?? ps.displayValue);
+          return num(ps);
+        };
         out = {
           provider: it.provider?.name ?? null,
+          // --- moneylines ---
           homeOpen: usableMl(moneyLine(it.homeTeamOdds?.open?.moneyLine)),
           homeClose: usableMl(moneyLine(it.homeTeamOdds?.close?.moneyLine) ?? moneyLine(it.homeTeamOdds?.moneyLine)),
           awayOpen: usableMl(moneyLine(it.awayTeamOdds?.open?.moneyLine)),
           awayClose: usableMl(moneyLine(it.awayTeamOdds?.close?.moneyLine) ?? moneyLine(it.awayTeamOdds?.moneyLine)),
+          // --- spread and total ---
+          // Older CFB seasons carry NO moneyline at all, only a spread -- so a spread model
+          // reaches roughly 1.6x the games the moneyline model can use.
+          spread: point(it.spread),
+          homeSpreadOdds: num(it.homeTeamOdds?.spreadOdds) ?? num(it.homeTeamOdds?.current?.spreadOdds),
+          awaySpreadOdds: num(it.awayTeamOdds?.spreadOdds) ?? num(it.awayTeamOdds?.current?.spreadOdds),
+          // Open/close spread LINES where ESPN has them (recent seasons); null otherwise.
+          // Pass the open/close block -- `line()` reaches into its `pointSpread`.
+          spreadOpen: line(it.homeTeamOdds?.open),
+          spreadClose: line(it.homeTeamOdds?.close),
+          overUnder: point(it.overUnder),
+          overOdds: num(it.overOdds),
+          underOdds: num(it.underOdds),
           details: it.details ?? null
         };
       }
@@ -167,17 +202,28 @@ async function pool(items, n, fn) {
   let seen = 0;
   await pool(completed, CONCURRENCY, async (g) => {
     const o = await fetchOdds(g);
-    if (o && o.homeClose && o.awayClose) {
+    // Attach whatever came back. Requiring a moneyline HERE (rather than only at the final
+    // filter) silently discards every spread-only game before it can be considered.
+    if (o) {
       g.odds = o;
-      odds += 1;
+      if (o.homeClose != null && o.awayClose != null) odds += 1;
     }
     seen += 1;
-    if (seen % 500 === 0) console.log(`  odds ${seen}/${completed.length} (${odds} usable)`);
+    if (seen % 500 === 0) console.log(`  odds ${seen}/${completed.length} (${odds} with a moneyline)`);
   });
 
-  const usable = completed.filter((g) => g.odds && g.odds.homeClose && g.odds.awayClose);
+  // Keep a game if EITHER market is priced. Filtering on the moneyline alone discards the
+  // games that only ever had a spread -- which for older college football seasons is most of
+  // them, and is precisely the sample a spread model exists to reach.
+  const priced = (o) =>
+    o &&
+    ((o.homeClose != null && o.awayClose != null) ||
+      (o.spread != null && (o.homeSpreadOdds != null || o.awaySpreadOdds != null)));
+  const usable = completed.filter((g) => priced(g.odds));
+  const withMl = usable.filter((g) => g.odds.homeClose != null && g.odds.awayClose != null).length;
+  const withSpread = usable.filter((g) => g.odds.spread != null && g.odds.homeSpreadOdds != null).length;
   const outFile = path.join(OUT_DIR, `${LEAGUE}-${START.slice(0, 4)}.json`);
   fs.writeFileSync(outFile, JSON.stringify(usable));
-  console.log(`FINAL: ${usable.length} games with usable open+close moneylines`);
+  console.log(`FINAL: ${usable.length} priced games (${withMl} with a moneyline, ${withSpread} with a spread+price)`);
   console.log(`wrote ${outFile}`);
 })();
