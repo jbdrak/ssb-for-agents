@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- feat: **a published, peer-reviewed profitable strategy — found by research, tested, and it does not reproduce.** Rather than hunt for more raw data, I went looking for a documented _mechanism_. Found one: **Simon, J. (2024), "Inefficient Forecasts at the Sportsbook", _Management Science_ 70(12): 8583-8611** — 3,681 MLB games across four sportsbooks, concluding that _"betting lines tend to overreact, exhibiting significant negatively autocorrelated changes"_, with a strategy returning **10-13%**: bet the team whose price has decreased when late line movement exceeds a threshold. That is **fading the move** — the opposite of steam-following, which I had already tested and which failed.
+
+  **Result: both directions lose.** MLB fade -4.0% to -5.5% (z = -1.5 to -2.4); MLB follow -3.8% to -4.8%; CFB fade -3.8% to -7.6%; CFB follow -6.0% to -8.7%. Cross-season on the MLB fade: **2024 -5.65%, 2025 -3.47%** — consistently negative.
+
+  **The limitation is stated rather than hidden:** the paper's effect is specific to movement in the **last 90 minutes**, and I have no intraday ticks — only open and close. So I tested the broader claim, which is _not_ the paper's mechanism. Three candidate explanations are given: my test isn't the paper's test (most likely), multiple testing (the paper ran **120 strategies** and its significant result rested on n=313), or market/era differences.
+
+  **One honest thread:** restricting to **weekend day games — the paper's own condition** — the MLB fade was the only configuration near break-even (-0.62% to -1.86%, z -0.37 to +0.41) versus -4% to -5.5% for all games. Directionally consistent with the paper's localization; still not significant, not profitable, not a strategy.
+
+  Also noted: **ESPN has no open lines for MLB 2023 at all** (0 of 2,436), so that test runs on 2024-25. `scripts/fade-move-test.js`, Part 5 of the CFB writeup.
+
 - feat: **an external data source, found and tested — weather. It is real, and fully priced.** The fair challenge was that finding data is my job, not the user's, so: ESPN venue data (city/state + an `indoor` flag, 100% coverage, 263 domes), Open-Meteo geocoding, and Open-Meteo's free historical archive (hourly temperature, wind speed/direction, precipitation, averaged over the game window). **4,117 of 4,521 outdoor games got weather (91%)**; indoor venues are explicitly marked weather-immune so a dome never receives outdoor conditions.
 
   The test that matters is not "does weather affect scoring" — it does. It is **does adding weather get the model's error below the line's?** Measured, on 2,874 games:
