@@ -11,8 +11,13 @@ const {
   fitMarginCoefficients,
   marginError,
   simulateSpreadBets,
-  assertSpreadConvention
-} = require('../lib/spread-model');
+  assertSpreadConvention,
+  modelTotal,
+  settleTotal,
+  fitTotalCoefficients,
+  totalError,
+  simulateTotalBets
+} = require('../lib/line-model');
 
 describe('homeLine', () => {
   it('converts ESPN home-perspective spread to the number home must win by', () => {
@@ -189,5 +194,63 @@ describe('assertSpreadConvention', () => {
 
   it('refuses to judge too few rows', () => {
     assert.equal(assertSpreadConvention([{ line: 1, margin: 2 }]).ok, null);
+  });
+});
+
+describe('totals', () => {
+  const full = { homePfRate: 30, homePaRate: 20, awayPfRate: 24, awayPaRate: 28 };
+
+  it('modelTotal averages the four scoring rates and applies k and c', () => {
+    // (30 + 28 + 24 + 20) / 2 = 51
+    assert.equal(modelTotal(full, { k: 1, c: 0 }), 51);
+    assert.equal(modelTotal(full, { k: 0.5, c: 2 }), 27.5);
+  });
+
+  it('modelTotal returns null when any rate is missing', () => {
+    assert.equal(modelTotal({ ...full, homePfRate: null }, { k: 1, c: 0 }), null);
+    assert.equal(modelTotal(null, { k: 1, c: 0 }), null);
+  });
+
+  it('settleTotal handles over, under and push', () => {
+    const row = (h, a, ou) => ({ homeScore: h, awayScore: a, overUnder: ou });
+    assert.equal(settleTotal(row(31, 24, 50), 'over'), 'win');
+    assert.equal(settleTotal(row(31, 24, 50), 'under'), 'loss');
+    assert.equal(settleTotal(row(20, 17, 50), 'under'), 'win');
+    assert.equal(settleTotal(row(20, 17, 50), 'over'), 'loss');
+    assert.equal(settleTotal(row(28, 22, 50), 'over'), 'push');
+    assert.equal(settleTotal({ homeScore: 1, awayScore: 1, overUnder: null }, 'over'), null);
+  });
+
+  it('totalError reports MAE and bias against the actual total', () => {
+    const rows = [
+      { overUnder: 50, homeScore: 30, awayScore: 30 },
+      { overUnder: 50, homeScore: 10, awayScore: 10 }
+    ];
+    const e = totalError(rows, () => 50);
+    assert.equal(e.n, 2);
+    assert.equal(e.mae, 20); // (|50-60| + |50-20|) / 2 = (10 + 30) / 2
+    assert.equal(e.bias, 10); // ((50-60) + (50-20)) / 2
+  });
+
+  it('simulateTotalBets places no bets when the model agrees with the line', () => {
+    const rows = [{ overUnder: 50, homeScore: 30, awayScore: 30, overOdds: -110, underOdds: -110 }];
+    assert.equal(simulateTotalBets(rows, () => 50, { threshold: 3 }).n, 0);
+  });
+
+  it('simulateTotalBets settles winners, losers and pushes', () => {
+    const rows = [
+      { overUnder: 50, homeScore: 31, awayScore: 30, overOdds: -110, underOdds: -110 },
+      { overUnder: 50, homeScore: 10, awayScore: 10, overOdds: -110, underOdds: -110 },
+      { overUnder: 50, homeScore: 25, awayScore: 25, overOdds: -110, underOdds: -110 }
+    ];
+    const s = simulateTotalBets(rows, () => 60, { threshold: 3 });
+    assert.equal(s.n, 3);
+    assert.equal(s.wins, 1);
+    assert.equal(s.losses, 1);
+    assert.equal(s.pushes, 1);
+  });
+
+  it('fitTotalCoefficients returns null when there is nothing to fit', () => {
+    assert.equal(fitTotalCoefficients([]), null);
   });
 });

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- feat: **totals, the fourth market — and the last one testable without new data.** 4,363 CFB games were already priced for over/under, so this needed no re-fetch. Same decisive check as spreads: the line _is_ a total prediction, and **the model beats the line on total MAE in 0 of 20 season pairs**. Betting: hit rate 50.7-51.5%, ROI **-1.67% to -3.21%**, **0.0% of 2,000 bootstrap resamples profitable**, placebo range -6.27% to -3.60%. This is the _least bad_ of the four markets, which is still not profitable — at -110 you need 52.4% to break even and it delivers 51.4%.
+
+  **Four markets now, one answer.** MLB moneyline (-4.37%), CFB moneyline (-0.67% to -2.20%), CFB spread (-4.46% to -5.09%), CFB totals (-1.67% to -3.21%) — every one loses, 0.0% bootstrap profitable, and the cause is identical: **the market's own line out-predicts the model on the same public inputs.** For the two line markets the test is direct and devastating: the line's MAE beats the model's in **40 of 40** season pairs combined. That is not a tuning problem.
+
+  `lib/spread-model.js` renamed to `lib/line-model.js` (it now covers both line markets), +7 totals tests. `scripts/totals-validate.js`. Part 3 of `docs/research/2026-09-18-ncaaf-model-verdict.md`.
+
 - feat: **the spread market, on 1.6x the data — and the cleanest "no" of the whole exercise.** The CFB moneyline result was a near-miss, so the obvious next question was the **spread** market, where ESPN carries prices for games that have no moneyline at all (4,784 priced games vs 3,025). It fails, and the reason is simpler than any ROI figure: **the line IS a margin prediction, and the model predicts margins worse than the line in 20 of 20 season pairs** (MAE ~12.9-13.9 vs the line's ~11.7-12.5). A model that is worse at forecasting margins cannot beat the line by thresholding.
 
   Betting confirms it: hit rate **49.8% to 50.1% across ~8,000 bets** — a literal coin flip at every threshold — with ROI **-4.46% to -5.09%**, **0.0% of 2,000 bootstrap resamples profitable**, negative CLV (-0.60 to -0.92 points, i.e. the line moves _against_ the model), and a placebo range (-8.79% to +1.29%) that contains the model's -4.61%.

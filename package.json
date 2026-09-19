@@ -110,7 +110,8 @@
     "prepublishOnly": "npm run check:package && npm run check:publish-tree",
     "sport:collect": "node scripts/sport-collect.js",
     "team:validate": "node scripts/team-validate.js",
-    "spread:validate": "node scripts/spread-validate.js"
+    "spread:validate": "node scripts/spread-validate.js",
+    "totals:validate": "node scripts/totals-validate.js"
   },
   "dependencies": {
     "got-scraping": "^4.2.1"
