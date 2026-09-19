@@ -192,18 +192,43 @@ it, 1,869 of 2,864 games show a moved line with realistic values (`8.5 -> 7`, `-
 decisively — a model that predicts margins worse than the market's own line in every one of
 20 season pairs.
 
-## Where this leaves the overall question
+## Part 3: totals (over/under) — same answer, and the closest of the four
 
-Three markets tested with the same machinery:
+The last market testable without new data: **4,363 CFB games already priced** for over/under,
+no re-fetch needed. Same decisive check — the line _is_ a total prediction.
 
-| market        | de-vigged edge                        | ROI              | bootstrap | verdict                      |
-| ------------- | ------------------------------------- | ---------------- | --------- | ---------------------------- |
-| MLB moneyline | +0.16pts (z=0.24)                     | -4.37%           | 0.0%      | no edge                      |
-| CFB moneyline | +1.45 to +1.89pts (z=2.25-2.55)       | -0.67% to -2.20% | 0.0%      | trace of signal, still loses |
-| CFB spread    | — (worse than the line on MAE, 20/20) | -4.46% to -5.09% | 0.0%      | no edge                      |
+**Model beats the line on total MAE in 0 of 20 season pairs.** The line predicts totals better
+than the model in every pair, consistently.
 
-**None is profitable.** The pattern is consistent and the cause is structural: every input
-available for free is already in the price, so the model cannot forecast better than the
-market and pays the vig. CFB moneylines came closest, and the honest read there is that the
-apparent signal is partly a selection artifact — the model is _worse_ than the market at
-forecasting while showing a betting edge, which is not what real skill looks like.
+Data sanity is strong here: mean actual total **53.85** against a mean closing line of
+**53.06**, and backing the OVER blindly returns **-4.03%** over 2,854 bets.
+
+| threshold | bets  | O-U-P        | hit   | ROI        |
+| --------- | ----- | ------------ | ----- | ---------- |
+| 1.0       | 9,577 | 4899-4606-72 | 51.5% | **-1.67%** |
+| 2.0       | 7,635 | 3891-3679-65 | 51.4% | **-1.96%** |
+| 3.0       | 5,807 | 2955-2797-55 | 51.4% | **-2.01%** |
+| 4.0       | 4,347 | 2199-2107-41 | 51.1% | **-2.55%** |
+| 5.0       | 3,108 | 1559-1515-34 | 50.7% | **-3.21%** |
+
+**Bootstrap: 0.0% of 2,000 resamples profitable.** Median ROI -2.81%. Placebo draws return
+-3.60%, -6.27%, -6.06% — the model's -2.01% sits at the _better_ end of that range but is
+still a loss.
+
+This is the **least bad** of the four markets (51.4% hit rate, -1.7% to -3.2% ROI), which is
+worth noting only because it is still not profitable: at typical -110 pricing you need 52.4%
+to break even, and the model delivers 51.4%.
+
+## Four markets, one answer
+
+| market        | games | decisive check                                  | ROI              | bootstrap |
+| ------------- | ----- | ----------------------------------------------- | ---------------- | --------- |
+| MLB moneyline | 6,876 | worse than the market on Brier, 6/6             | -4.37%           | 0.0%      |
+| CFB moneyline | 3,025 | de-vigged +1.45 to +1.89pts, but below the hold | -0.67% to -2.20% | 0.0%      |
+| CFB spread    | 4,784 | worse than the line on margin MAE, 20/20        | -4.46% to -5.09% | 0.0%      |
+| CFB totals    | 4,363 | worse than the line on total MAE, 20/20         | -1.67% to -3.21% | 0.0%      |
+
+**Nothing is profitable, and the cause is identical every time: the market's own line
+out-predicts the model on the same public inputs.** For the two line markets the test is
+direct — the line's MAE beats the model's in 40 of 40 season pairs combined. That is not a
+tuning problem; it is the market already containing the information.

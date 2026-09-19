@@ -1,15 +1,14 @@
 'use strict';
 /**
- * Spread validation battery.
+ * Totals (over/under) validation battery.
  *
- * The moneyline battery asks "does the model beat the closing price?". The spread version
- * asks the sharper question first: **is the model better at predicting the margin than the
- * LINE itself is?** The line is already a margin prediction, so if the model's mean absolute
- * error is worse than the line's, it cannot have an edge no matter how it is thresholded.
- * That check comes before any betting simulation.
+ * Same logic as the spread battery: the line IS a total prediction, so the decisive check
+ * comes BEFORE any betting simulation -- compare mean absolute error on the actual total.
+ * If the model is worse than the line at predicting totals, it cannot beat the line by
+ * thresholding, wherever the threshold is set.
  *
  * Usage:
- *   node scripts/spread-validate.js --league college-football --seasons 2021,2022,2023,2024,2025
+ *   node scripts/totals-validate.js --league college-football --seasons 2021,2022,2023,2024,2025
  */
 
 const fs = require('fs');
@@ -17,11 +16,10 @@ const path = require('path');
 const os = require('os');
 const {
   buildWalkForwardMarginRows,
-  fitMarginCoefficients,
-  modelMargin,
-  marginError,
-  simulateSpreadBets,
-  assertSpreadConvention
+  fitTotalCoefficients,
+  modelTotal,
+  totalError,
+  simulateTotalBets
 } = require('../lib/line-model');
 const { payout } = require('../lib/team-model');
 
@@ -38,7 +36,7 @@ const MIN_GAMES = Number(arg('min-games', '3'));
 const DATA_DIR = process.env.SSB_DATA_DIR || path.join(os.homedir(), '.ssb-for-agents', 'data');
 const THRESHOLDS = [1, 2, 3, 4, 5];
 
-console.log(`=== ${LEAGUE} spread model validation ===`);
+console.log(`=== ${LEAGUE} totals model validation ===`);
 console.log(`seasons ${SEASONS.join(', ')} | min games ${MIN_GAMES}`);
 
 const rowsBySeason = {};
@@ -49,76 +47,57 @@ for (const s of SEASONS) {
     process.exit(1);
   }
   const rows = buildWalkForwardMarginRows(JSON.parse(fs.readFileSync(f, 'utf8')), { minGames: MIN_GAMES });
-  rowsBySeason[s] = rows.filter((r) => r.line != null && r.homeMarginRate != null && r.awayMarginRate != null);
+  rowsBySeason[s] = rows.filter(
+    (r) =>
+      r.overUnder != null &&
+      Number.isFinite(r.overOdds) &&
+      Number.isFinite(r.underOdds) &&
+      r.homePfRate != null &&
+      r.awayPfRate != null
+  );
   console.log(`  ${s}: ${rowsBySeason[s].length} usable games (of ${rows.length} priced)`);
 }
 const allRows = SEASONS.flatMap((s) => rowsBySeason[s]);
 
-// ---------- 0. convention ----------
-// If ESPN's spread sign were inverted, every result below would be silently reversed.
-console.log('');
-console.log('=== 0. SPREAD SIGN CONVENTION (must be verified, not assumed) ===');
-const conv = assertSpreadConvention(allRows);
-console.log(
-  `  n=${conv.n}  home covers ${((conv.homeCovers ?? 0) * 100).toFixed(1)}%  corr(line, actual margin) ${(conv.corr ?? 0).toFixed(3)}`
-);
-console.log(
-  `  ${conv.ok ? 'PASS: home-perspective, as assumed' : 'FAIL: convention is wrong, results below are meaningless'}`
-);
-if (!conv.ok) process.exit(1);
-
 // ---------- 1. data sanity ----------
 console.log('');
 console.log('=== 1. DATA SANITY ===');
-const margins = allRows.map((r) => r.margin);
-const meanMargin = margins.reduce((a, b) => a + b, 0) / margins.length;
-const homeWinRate = allRows.filter((r) => r.margin > 0).length / allRows.length;
-console.log(`  mean actual margin ${meanMargin.toFixed(2)} (home field), home wins ${(homeWinRate * 100).toFixed(1)}%`);
-// Backing the favourite against the spread must lose about the hold.
-let favN = 0,
-  favW = 0,
-  favPnl = 0;
+const totals = allRows.map((r) => r.homeScore + r.awayScore);
+const meanTotal = totals.reduce((a, b) => a + b, 0) / totals.length;
+const meanLine = allRows.reduce((s, r) => s + r.overUnder, 0) / allRows.length;
+console.log(`  mean actual total ${meanTotal.toFixed(2)} | mean closing line ${meanLine.toFixed(2)} (should be close)`);
+let ovN = 0,
+  ovW = 0,
+  ovPnl = 0;
 for (const r of allRows) {
-  const favHome = r.line < 0; // negative line = home favoured
-  const price = favHome ? r.homeSpreadOdds : r.awaySpreadOdds;
-  const result = favHome
-    ? r.margin > r.line
-      ? 'win'
-      : r.margin < r.line
-        ? 'loss'
-        : 'push'
-    : r.margin < r.line
-      ? 'win'
-      : r.margin > r.line
-        ? 'loss'
-        : 'push';
-  if (result === 'push') continue;
-  favN += 1;
-  if (result === 'win') {
-    favW += 1;
-    favPnl += payout(Number.isFinite(price) ? price : -110);
-  } else favPnl -= 1;
+  const t = r.homeScore + r.awayScore;
+  if (t === r.overUnder) continue;
+  ovN += 1;
+  if (t > r.overUnder) {
+    ovW += 1;
+    ovPnl += payout(Number.isFinite(r.overOdds) ? r.overOdds : -110);
+  } else ovPnl -= 1;
 }
 console.log(
-  `  backing the FAVOURITE against the spread: ${favN} bets, ${favW}W (${((favW / favN) * 100).toFixed(1)}%), ROI ${((favPnl / favN) * 100).toFixed(2)}%`
+  `  backing the OVER every game: ${ovN} bets, ${ovW}W (${((ovW / ovN) * 100).toFixed(1)}%), ROI ${((ovPnl / ovN) * 100).toFixed(2)}%`
 );
-console.log('  ^ must be NEGATIVE. A positive number here means the line or the scores are wrong.');
+console.log('  ^ must be NEGATIVE and near the hold. Positive means the total data or scores are wrong.');
 
-// ---------- 2. is the model a better margin predictor than the line? ----------
+// ---------- 2. total accuracy vs the line ----------
 console.log('');
-console.log('=== 2. MARGIN ACCURACY: the model vs the LINE ITSELF ===');
-console.log('The line IS a margin prediction. Worse MAE than the line => no edge is possible.');
+console.log('=== 2. TOTAL ACCURACY: the model vs the LINE ITSELF ===');
+console.log('The line IS a total prediction. Worse MAE than the line => no edge is possible.');
 console.log('train->test   nTest   MAE model   MAE line   bias model   verdict');
 const fits = {};
-for (const s of SEASONS) fits[s] = fitMarginCoefficients(rowsBySeason[s]);
+for (const s of SEASONS) fits[s] = fitTotalCoefficients(rowsBySeason[s]);
 let better = 0;
 let pairs = 0;
 for (const tr of SEASONS) {
   for (const te of SEASONS) {
     if (te === tr) continue;
     const test = rowsBySeason[te];
-    const m = marginError(test, (r) => modelMargin(r, fits[tr]));
-    const l = marginError(test, (r) => r.line);
+    const m = totalError(test, (r) => modelTotal(r, fits[tr]));
+    const l = totalError(test, (r) => r.overUnder);
     if (!m || !l) continue;
     pairs += 1;
     if (m.mae < l.mae) better += 1;
@@ -128,23 +107,20 @@ for (const tr of SEASONS) {
     );
   }
 }
-console.log(`  model beats the LINE on margin MAE in ${better} of ${pairs} season pairs`);
-console.log(
-  `  fitted: ${SEASONS.map((s) => `${s} k=${fits[s].k.toFixed(3)} hfa=${fits[s].hfa.toFixed(2)}`).join(' | ')}`
-);
+console.log(`  model beats the LINE on total MAE in ${better} of ${pairs} season pairs`);
+console.log(`  fitted: ${SEASONS.map((s) => `${s} k=${fits[s].k.toFixed(3)} c=${fits[s].c.toFixed(1)}`).join(' | ')}`);
 
 // ---------- 3. pooled betting ----------
 console.log('');
-console.log('=== 3. POOLED out-of-sample spread betting (all season pairs, real prices) ===');
-console.log('  thresh   bets    W-L-P        hit      ROI      +/-1se    CLV(pts)');
+console.log('=== 3. POOLED out-of-sample over/under betting (all season pairs, real prices) ===');
+console.log('  thresh   bets    O-U-P          hit      ROI      +/-1se');
 const pooled = {};
-for (const t of THRESHOLDS)
-  pooled[t] = { n: 0, wins: 0, losses: 0, pushes: 0, pnl: 0, returns: [], clvN: 0, clvSum: 0 };
+for (const t of THRESHOLDS) pooled[t] = { n: 0, wins: 0, losses: 0, pushes: 0, pnl: 0 };
 for (const tr of SEASONS) {
   for (const te of SEASONS) {
     if (te === tr) continue;
     for (const t of THRESHOLDS) {
-      const s = simulateSpreadBets(rowsBySeason[te], (r) => modelMargin(r, fits[tr]), { threshold: t });
+      const s = simulateTotalBets(rowsBySeason[te], (r) => modelTotal(r, fits[tr]), { threshold: t });
       if (!s.n) continue;
       const p = pooled[t];
       p.n += s.n;
@@ -152,10 +128,6 @@ for (const tr of SEASONS) {
       p.losses += s.losses;
       p.pushes += s.pushes;
       p.pnl += s.pnl;
-      if (s.clv != null) {
-        p.clvSum += s.clv * s.n;
-        p.clvN += s.n;
-      }
     }
   }
 }
@@ -168,7 +140,7 @@ for (const t of THRESHOLDS) {
   const roiSe = Math.sqrt((1 + Math.abs(roi)) / p.n);
   console.log(
     `  ${t.toFixed(1)}     ${String(p.n).padStart(5)}   ${String(p.wins).padStart(4)}-${String(p.losses).padEnd(4)}-${String(p.pushes).padEnd(4)}  ` +
-      `${(hit * 100).toFixed(1)}%   ${roi >= 0 ? '+' : ''}${(roi * 100).toFixed(2)}%   ${(roiSe * 100).toFixed(2)}%   ${p.clvN ? (p.clvSum / p.clvN).toFixed(2) : 'n/a'}`
+      `${(hit * 100).toFixed(1)}%   ${roi >= 0 ? '+' : ''}${(roi * 100).toFixed(2)}%   ${(roiSe * 100).toFixed(2)}%`
   );
 }
 
@@ -181,15 +153,16 @@ for (const tr of SEASONS) {
   for (const te of SEASONS) {
     if (te === tr) continue;
     for (const r of rowsBySeason[te]) {
-      const m = modelMargin(r, fits[tr]);
-      if (m == null) continue;
-      const eh = m - r.line;
-      const side = eh > REF ? 'home' : -eh > REF ? 'away' : null;
+      const t = modelTotal(r, fits[tr]);
+      if (t == null) continue;
+      const e = t - r.overUnder;
+      const side = e > REF ? 'over' : -e > REF ? 'under' : null;
       if (!side) continue;
-      const price = Number(side === 'home' ? r.homeSpreadOdds : r.awaySpreadOdds);
-      const diff = side === 'home' ? r.margin - r.line : r.line - r.margin;
-      if (diff === 0) continue;
-      base.push(diff > 0 ? payout(Number.isFinite(price) ? price : -110) : -1);
+      const total = r.homeScore + r.awayScore;
+      if (total === r.overUnder) continue;
+      const price = Number(side === 'over' ? r.overOdds : r.underOdds);
+      const won = side === 'over' ? total > r.overUnder : total < r.overUnder;
+      base.push(won ? payout(Number.isFinite(price) ? price : -110) : -1);
     }
   }
 }
@@ -220,16 +193,16 @@ for (const tr of SEASONS) {
   for (const te of SEASONS) {
     if (te === tr) continue;
     for (const r of rowsBySeason[te]) {
-      const m = modelMargin(r, fits[tr]);
-      if (m == null) continue;
-      sq += (m - r.line) ** 2;
+      const t = modelTotal(r, fits[tr]);
+      if (t == null) continue;
+      sq += (t - r.overUnder) ** 2;
       cnt += 1;
     }
   }
 }
 const sd = Math.sqrt(sq / cnt);
 console.log(`  model disagreement sd = ${sd.toFixed(2)} points`);
-let seed2 = 999;
+let seed2 = 4242;
 const gauss = () => {
   let u = 0,
     v = 0;
@@ -249,15 +222,16 @@ for (const draw of [1, 2, 3]) {
       for (const r of rowsBySeason[te]) {
         const key = `${te}|${r.startDate}|${r.home.name}|${r.away.name}`;
         if (!noise.has(key)) noise.set(key, gauss() * sd);
-        const m = r.line + noise.get(key);
-        const eh = m - r.line;
-        const side = eh > REF ? 'home' : -eh > REF ? 'away' : null;
+        const t = r.overUnder + noise.get(key);
+        const e = t - r.overUnder;
+        const side = e > REF ? 'over' : -e > REF ? 'under' : null;
         if (!side) continue;
-        const price = Number(side === 'home' ? r.homeSpreadOdds : r.awaySpreadOdds);
-        const diff = side === 'home' ? r.margin - r.line : r.line - r.margin;
-        if (diff === 0) continue;
+        const total = r.homeScore + r.awayScore;
+        if (total === r.overUnder) continue;
+        const price = Number(side === 'over' ? r.overOdds : r.underOdds);
+        const won = side === 'over' ? total > r.overUnder : total < r.overUnder;
         n += 1;
-        if (diff > 0) {
+        if (won) {
           wins += 1;
           pnl += payout(Number.isFinite(price) ? price : -110);
         } else {
@@ -275,5 +249,5 @@ for (const draw of [1, 2, 3]) {
 }
 
 console.log('');
-console.log('A spread edge needs: model MAE BETTER than the line, ROI above -hold, a bootstrap that');
+console.log('A totals edge needs: model MAE BETTER than the line, ROI above -hold, a bootstrap that');
 console.log('is not ~0% profitable, and a placebo that does not match the model.');
