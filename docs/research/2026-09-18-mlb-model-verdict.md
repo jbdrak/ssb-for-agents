@@ -29,8 +29,8 @@ So: build one, and test it honestly.
 - **Sanity-checked:** the market is well calibrated on this data (implied 0.547 -> actual
   0.531 in the 0.5-0.6 bucket, and calibrated in every other bucket), and blindly backing the
   favourite in every game returns **-6.39% ROI** over 6,876 bets, exactly the vig. The prices
-  and the P&L arithmetic are correct. `npm run mlb:cross-season` prints this check itself, so
-  the verdict is self-validating.
+  and the P&L arithmetic are correct. `npm run team:validate --league mlb` prints this check
+  itself, so the verdict is self-validating.
 
 ## Method
 
