@@ -16,7 +16,7 @@ const path = require('path');
 const os = require('os');
 const DATA_DIR = process.env.SSB_MLB_DATA || path.join(os.homedir(), '.ssb-for-agents', 'mlb');
 
-const { buildWalkForwardRows } = require('../lib/mlb-model');
+const { buildWalkForwardRows } = require('../lib/team-model');
 
 const SEASONS = ['2023', '2024', '2025'];
 const rows = [];

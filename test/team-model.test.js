@@ -14,7 +14,7 @@ const {
   fitCoefficients,
   simulateBets,
   payout
-} = require('../lib/mlb-model');
+} = require('../lib/team-model');
 
 describe('odds conversion', () => {
   it('converts American prices to implied probability', () => {
@@ -193,6 +193,18 @@ describe('buildWalkForwardRows -- the invariants that keep this honest', () => {
   it('sorts games chronologically regardless of input order', () => {
     const rows = buildWalkForwardRows([games[1], games[0]], { minGames: 1, minStarts: 1 });
     assert.equal(rows[0].startDate, games[0].startDate);
+  });
+
+  it('honours a sport-specific Pythagorean exponent', () => {
+    // Football wants a steeper exponent than baseball. It must actually change the feature,
+    // not be accepted and ignored.
+    const baseball = buildWalkForwardRows(games, { minGames: 1, minStarts: 1, exponent: 1.83 });
+    const football = buildWalkForwardRows(games, { minGames: 1, minStarts: 1, exponent: 2.37 });
+    assert.notEqual(baseball[1].awayStrength, football[1].awayStrength, 'exponent must change strength');
+    assert.equal(
+      football[1].awayStrength.toFixed(10),
+      pythagoreanStrength(10, 1, 1, { minGames: 1, exponent: 2.37 }).toFixed(10)
+    );
   });
 });
 
