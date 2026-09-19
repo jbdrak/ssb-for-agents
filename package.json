@@ -99,6 +99,12 @@
     "evaluate": "node scripts/evaluate.js",
     "promo:card": "node scripts/promo-card.js",
     "arbs": "node scripts/find-arbs.js",
+    "mlb:collect": "node scripts/mlb-collect.js",
+    "mlb:backtest": "node scripts/mlb-backtest.js",
+    "mlb:cross-season": "node scripts/mlb-cross-season.js",
+    "mlb:stress": "node scripts/mlb-stress.js",
+    "mlb:placebo": "node scripts/mlb-placebo.js",
+    "mlb:leak-check": "node scripts/mlb-leak-check.js",
     "repair:settlements": "node scripts/repair-shadow-settlements.js",
     "verify": "npm run check:version && npm run check:claims:quick && npm run check:secrets && npm run lint && npm run check:types && tsc -p tsconfig.strict-critical.json && npm run check:circular && npm run check:reachability && npm run format:check && npm run check:package && npm audit --audit-level=moderate --omit=dev && npm test",
     "test": "node --test --test-concurrency=1 test/*.test.js",
@@ -106,7 +112,9 @@
     "test:ci": "node --test --test-concurrency=1 test/*.test.js",
     "test:coverage": "c8 --reporter=text-summary --reporter=lcov node --test --test-concurrency=1 test/*.test.js",
     "install:verify": "node --test \"test/quick-screen-cache.test.js\" \"test/ask-routes.test.js\" \"test/ssb-tool-definitions.test.js\" \"test/place-bet.test.js\" \"test/today.test.js\" \"test/pipeline.test.js\" \"test/ssb-verbosity-param.test.js\" \"test/ssb-mcp-server-meta.test.js\" \"test/ssb-mcp-server-stderr.test.js\"",
-    "prepublishOnly": "npm run check:package && npm run check:publish-tree"
+    "prepublishOnly": "npm run check:package && npm run check:publish-tree",
+    "mlb:contradiction": "node scripts/mlb-contradiction-check.js",
+    "mlb:pick-dump": "node scripts/mlb-pick-dump.js"
   },
   "dependencies": {
     "got-scraping": "^4.2.1"
