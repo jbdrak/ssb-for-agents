@@ -111,7 +111,9 @@
     "sport:collect": "node scripts/sport-collect.js",
     "team:validate": "node scripts/team-validate.js",
     "spread:validate": "node scripts/spread-validate.js",
-    "totals:validate": "node scripts/totals-validate.js"
+    "totals:validate": "node scripts/totals-validate.js",
+    "weather:join": "node scripts/weather-join.js",
+    "weather:test": "node scripts/weather-test.js"
   },
   "dependencies": {
     "got-scraping": "^4.2.1"

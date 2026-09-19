@@ -219,6 +219,70 @@ This is the **least bad** of the four markets (51.4% hit rate, -1.7% to -3.2% RO
 worth noting only because it is still not profitable: at typical -110 pricing you need 52.4%
 to break even, and the model delivers 51.4%.
 
+## Part 4: weather — an external input, and the clearest demonstration yet
+
+The challenge was fair: I'd said "point me at a data source" when finding one is my job. So I
+went and got one — free, no API key:
+
+- **ESPN venue data** — city/state plus an `indoor` flag (100% coverage; 263 domes)
+- **Open-Meteo geocoding** — city → lat/lon
+- **Open-Meteo historical archive** — hourly temperature, wind speed/direction, precipitation,
+  averaged over the game window rather than sampled at kickoff
+
+**4,117 of 4,521 outdoor games got weather (91%)**, plus 263 indoor games marked as
+weather-immune so a dome never receives outdoor conditions.
+
+### The test, and why it's the right one
+
+The question is NOT "does weather affect scoring" — it obviously does. The question is
+**does adding weather get the model's error below the line's?** If the market already prices
+wind and temperature, the feature is worth nothing to a bettor.
+
+### 1. Weather is real
+
+| condition      | n     | mean actual total |
+| -------------- | ----- | ----------------- |
+| windy (≥15mph) | 95    | **50.17**         |
+| calm (<10mph)  | 2,017 | **54.05**         |
+| cold (<45°F)   | 340   | **52.05**         |
+| warm (≥65°F)   | 1,106 | **54.47**         |
+
+Wind suppresses scoring by **3.88 points**; cold by **2.42 points**. Both are genuine,
+physically sensible effects.
+
+### 2. The market already prices it — and then some
+
+The closing line sits at a mean of **49.14** on windy games versus **53.23** on calm ones.
+That is a **4.09-point adjustment**, against a **3.88-point** real effect.
+
+**The market's wind adjustment is slightly LARGER than the actual effect of wind.** It is not
+merely priced; it is fully priced, if anything over-adjusted.
+
+### 3. Adding weather never beats the line
+
+|                | MAE                       |
+| -------------- | ------------------------- |
+| base model     | ~13.0                     |
+| base + weather | ~13.0 (marginally better) |
+| **the line**   | **~12.5**                 |
+
+**Weather beats the line in 0 of 20 season pairs.** The base model also beats it in 0 of 20.
+Weather improves the model by a few hundredths of a point and does not come close to closing
+a ~0.5-point gap.
+
+### Bottom line
+
+Weather is a **real** signal that is **fully priced**. This is the cleanest demonstration of
+the whole exercise's thesis, because it quantifies both sides: the true effect of wind is
+**3.88 points** and the market's adjustment is **4.09 points**. There is nothing left to
+capture.
+
+The lesson generalises, and it is why hunting for more data sources is unlikely to help:
+**the market's closing line is already an excellent model of the public information.** Finding
+a public input it has missed is not a matter of looking harder.
+
+_(Reproduce: `npm run weather:join` then `node scripts/weather-test.js`.)_
+
 ## Four markets, one answer
 
 | market        | games | decisive check                                  | ROI              | bootstrap |
