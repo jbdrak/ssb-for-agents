@@ -114,7 +114,9 @@
     "totals:validate": "node scripts/totals-validate.js",
     "weather:join": "node scripts/weather-join.js",
     "weather:test": "node scripts/weather-test.js",
-    "fade:test": "node scripts/fade-move-test.js"
+    "fade:test": "node scripts/fade-move-test.js",
+    "market:efficiency": "node scripts/market-efficiency.js",
+    "fav:bias": "node scripts/favourite-bias.js"
   },
   "dependencies": {
     "got-scraping": "^4.2.1"

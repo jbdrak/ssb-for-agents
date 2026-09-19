@@ -74,60 +74,112 @@ async function fetchDay(date) {
   if (!res.ok) return []; // never cache a failure
   const json = await res.json();
   const games = (json.events || [])
-    .map((ev) => {
-      const comp = ev.competitions[0];
-      const home = (comp.competitors || []).find((c) => c.homeAway === 'home');
-      const away = (comp.competitors || []).find((c) => c.homeAway === 'away');
-      if (!home || !away) return null;
-      const side = (c) => ({
-        id: c.team?.id,
-        name: c.team?.displayName,
-        abbr: c.team?.abbreviation,
-        score: c.score != null ? Number(c.score) : null,
-        winner: c.winner === true,
-        starterId: c.probables?.[0]?.athlete?.id ?? null,
-        starterName: c.probables?.[0]?.athlete?.fullName ?? null
-      });
-      // Venue, for joining weather. `indoor` matters as much as the location: a dome is
-      // weather-immune, so including it in a weather feature would add pure noise.
-      const v = comp.venue;
-      return {
-        eventId: ev.id,
-        date,
-        startDate: comp.startDate,
-        completed: comp.status?.type?.completed === true,
-        neutralSite: comp.neutralSite === true,
-        venue: v
-          ? {
-              id: v.id ?? null,
-              name: v.fullName ?? null,
-              city: v.address?.city ?? null,
-              state: v.address?.state ?? null,
-              indoor: v.indoor === true
-            }
-          : null,
-        home: side(home),
-        away: side(away)
-      };
-    })
+    .flatMap((ev) =>
+      (ev.competitions || []).map((comp) => {
+        // Team sports use homeAway; individual sports (UFC) have no home/away and use `order`,
+        // where order 1 corresponds to ESPN's `homeAthleteOdds` -- verified against a known
+        // card rather than assumed.
+        const comps = comp.competitors || [];
+        const home = comps.find((c) => c.homeAway === 'home') ?? comps.find((c) => c.order === 1);
+        const away = comps.find((c) => c.homeAway === 'away') ?? comps.find((c) => c.order === 2);
+        if (!home || !away) return null;
+        const side = (c) => ({
+          id: c.team?.id ?? c.athlete?.id,
+          name: c.team?.displayName ?? c.athlete?.displayName,
+          abbr: c.team?.abbreviation ?? null,
+          score: c.score != null ? Number(c.score) : null,
+          winner: c.winner === true,
+          starterId: c.probables?.[0]?.athlete?.id ?? null,
+          starterName: c.probables?.[0]?.athlete?.fullName ?? null
+        });
+        // Venue, for joining weather. `indoor` matters as much as the location: a dome is
+        // weather-immune, so including it in a weather feature would add pure noise.
+        const v = comp.venue;
+        return {
+          eventId: ev.id,
+          // For UFC the competition id differs from the event id, and the odds URL needs both.
+          compId: comp.id ?? ev.id,
+          date,
+          startDate: comp.startDate ?? ev.date,
+          // Score-less sports (UFC) settle by `winner`; team sports by score.
+          completed: comp.status?.type?.completed === true,
+          homeWon:
+            home.winner === true && away.winner !== true
+              ? true
+              : away.winner === true && home.winner !== true
+                ? false
+                : null,
+          neutralSite: comp.neutralSite === true,
+          venue: v
+            ? {
+                id: v.id ?? null,
+                name: v.fullName ?? null,
+                city: v.address?.city ?? null,
+                state: v.address?.state ?? null,
+                indoor: v.indoor === true
+              }
+            : null,
+          home: side(home),
+          away: side(away)
+        };
+      })
+    )
     .filter(Boolean);
   fs.writeFileSync(file, JSON.stringify(games));
   return games;
 }
 
 async function fetchOdds(game) {
-  const file = path.join(CACHE, `od-${game.eventId}.json`);
+  // Key the cache on the COMPETITION id. For UFC several fights share one event id, so
+  // keying on the event would make them overwrite each other.
+  const file = path.join(CACHE, `od-${game.compId ?? game.eventId}.json`);
   if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
-  const url = `https://sports.core.api.espn.com/v2/sports/${SPORT}/leagues/${LEAGUE}/events/${game.eventId}/competitions/${game.eventId}/odds`;
+  const url = `https://sports.core.api.espn.com/v2/sports/${SPORT}/leagues/${LEAGUE}/events/${game.eventId}/competitions/${game.compId ?? game.eventId}/odds`;
   let out = null;
   try {
     const res = await fetch(url);
     if (res.ok) {
       const json = await res.json();
       // ESPN returns several items, including a "Live Odds" placeholder priced 0.
-      const items = (json.items || []).filter((i) => i.homeTeamOdds && i.awayTeamOdds);
-      const it = items[0];
-      if (it) {
+      // UFC (and other individual sports) use `homeAthleteOdds`/`awayAthleteOdds` rather than
+      // the team naming -- same open/current/moneyLine structure inside.
+      //
+      // DO NOT trust items[0]. ESPN's item ORDER varies by league and season, and some books
+      // quote a 3-way regulation market (home/away/draw) whose home+away prices sum to ~0.83
+      // because the draw is omitted. De-vigging that as a 2-way market produces a NEGATIVE
+      // overround and fake profit -- it made NHL look like a +9.8% favourite edge until caught.
+      // So: pick the first item that is a COHERENT 2-way market, preferring one provider so
+      // cross-league comparisons are apples-to-apples.
+      const raw = (json.items || [])
+        .map((i) => ({
+          it: i,
+          home: i.homeTeamOdds ?? i.homeAthleteOdds,
+          away: i.awayTeamOdds ?? i.awayAthleteOdds
+        }))
+        .filter((x) => x.home && x.away);
+
+      const implied = (ml) => {
+        const n = Number(typeof ml === 'object' && ml !== null ? (ml.american ?? ml.alternateDisplayValue) : ml);
+        if (!Number.isFinite(n) || n === 0) return null;
+        return n > 0 ? 100 / (n + 100) : -n / (-n + 100);
+      };
+      const twoWaySum = (c) => {
+        const h = implied(c.home?.moneyLine ?? c.home?.close?.moneyLine);
+        const a = implied(c.away?.moneyLine ?? c.away?.close?.moneyLine);
+        return h == null || a == null ? null : h + a;
+      };
+      const coherent = raw.filter((c) => {
+        const s = twoWaySum(c);
+        return s != null && s >= 1.0 && s <= 1.12;
+      });
+      const preferred = coherent.filter(
+        (c) => /espn\s*bet/i.test(c.it.provider?.name || '') && !/live/i.test(c.it.provider?.name || '')
+      );
+      const hit = preferred[0] ?? coherent[0] ?? null;
+      if (hit) {
+        const it = hit.it;
+        const homeOdds = hit.home;
+        const awayOdds = hit.away;
         const num = (x) => {
           const n = Number(x);
           return Number.isFinite(n) ? n : null;
@@ -152,20 +204,20 @@ async function fetchOdds(game) {
         out = {
           provider: it.provider?.name ?? null,
           // --- moneylines ---
-          homeOpen: usableMl(moneyLine(it.homeTeamOdds?.open?.moneyLine)),
-          homeClose: usableMl(moneyLine(it.homeTeamOdds?.close?.moneyLine) ?? moneyLine(it.homeTeamOdds?.moneyLine)),
-          awayOpen: usableMl(moneyLine(it.awayTeamOdds?.open?.moneyLine)),
-          awayClose: usableMl(moneyLine(it.awayTeamOdds?.close?.moneyLine) ?? moneyLine(it.awayTeamOdds?.moneyLine)),
+          homeOpen: usableMl(moneyLine(homeOdds?.open?.moneyLine)),
+          homeClose: usableMl(moneyLine(homeOdds?.close?.moneyLine) ?? moneyLine(homeOdds?.moneyLine)),
+          awayOpen: usableMl(moneyLine(awayOdds?.open?.moneyLine)),
+          awayClose: usableMl(moneyLine(awayOdds?.close?.moneyLine) ?? moneyLine(awayOdds?.moneyLine)),
           // --- spread and total ---
           // Older CFB seasons carry NO moneyline at all, only a spread -- so a spread model
           // reaches roughly 1.6x the games the moneyline model can use.
           spread: point(it.spread),
-          homeSpreadOdds: num(it.homeTeamOdds?.spreadOdds) ?? num(it.homeTeamOdds?.current?.spreadOdds),
-          awaySpreadOdds: num(it.awayTeamOdds?.spreadOdds) ?? num(it.awayTeamOdds?.current?.spreadOdds),
+          homeSpreadOdds: num(homeOdds?.spreadOdds) ?? num(homeOdds?.current?.spreadOdds),
+          awaySpreadOdds: num(awayOdds?.spreadOdds) ?? num(awayOdds?.current?.spreadOdds),
           // Open/close spread LINES where ESPN has them (recent seasons); null otherwise.
           // Pass the open/close block -- `line()` reaches into its `pointSpread`.
-          spreadOpen: line(it.homeTeamOdds?.open),
-          spreadClose: line(it.homeTeamOdds?.close),
+          spreadOpen: line(homeOdds?.open),
+          spreadClose: line(homeOdds?.close),
           overUnder: point(it.overUnder),
           overOdds: num(it.overOdds),
           underOdds: num(it.underOdds),
@@ -207,7 +259,10 @@ async function pool(items, n, fn) {
   });
   const games = dates.flatMap((d) => byDate.get(d) || []);
 
-  const completed = games.filter((g) => g.completed && g.home.score != null && g.away.score != null);
+  // A settled game is one with a result -- by score (team sports) OR by winner (UFC).
+  const completed = games.filter(
+    (g) => g.completed && (g.homeWon != null || (g.home.score != null && g.away.score != null))
+  );
   console.log(`scoreboards: ${games.length} games, ${completed.length} completed`);
 
   let odds = 0;
