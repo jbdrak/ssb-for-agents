@@ -586,7 +586,7 @@ function walletLine(p) {
   return '    ' + parts.join(' · ') + '\n';
 }
 
-function formatScan(results) {
+function formatScan(results, book = 'NoVigApp') {
   if (!results || !results.length) return 'No plays found.';
   let out = '';
   let total = 0;
@@ -598,7 +598,7 @@ function formatScan(results) {
       const tier = tierColor(p.tier || p.confidenceTier || '?');
       const mv = movementColor(p.movement || p.movementDisposition || '');
       const verdict = verdictSymbol(p.verdict || p.finalVerdict || p.kaiCall || '');
-      const oddsStr = p.odds > 0 ? '+' + p.odds : String(p.odds);
+      const oddsStr = formatExecutionOdds(p.odds, book);
       const clvStr = clvColor(p.clv);
       const edgeStr = p.edge != null ? (p.edge >= 0 ? G : RED) + p.edge.toFixed(1) + '%' + R : '';
       out += '  ' + p.selection + ' @ ' + oddsStr + '  |  ' + tier + '  ' + verdict + '\n';
@@ -1246,7 +1246,7 @@ function renderScanOutput(
       );
     }
     if (rangeHeader) console.log(B + rangeHeader + R + '\n');
-    console.log(formatScan(results));
+    console.log(formatScan(results, book));
     const total = results.reduce((s, r) => s + (r.plays || []).length, 0);
     console.log('\n' + total + ' plays across ' + results.length + ' markets');
   }
@@ -1855,7 +1855,7 @@ async function cmdRank(handlers, positional, flags) {
     return;
   }
 
-  printRankedRows(league, res);
+  printRankedRows(league, res, book);
 }
 
 /** Merge the per-market screen_ranked responses for --all-markets JSON output. */
@@ -1959,11 +1959,11 @@ async function cmdCard(handlers, positional, flags) {
 }
 
 /** Render the grouped, per-game rank view for a single or merged response. */
-function printRankedRows(league, res) {
-  printRankedLeague(league, [res]);
+function printRankedRows(league, res, book = 'NoVigApp') {
+  printRankedLeague(league, [res], book);
 }
 
-function printRankedLeague(league, responses) {
+function printRankedLeague(league, responses, book = 'NoVigApp') {
   const rows = [];
   const marketTags = [];
   for (const res of responses) {
@@ -2018,7 +2018,7 @@ function printRankedLeague(league, responses) {
     for (const r of grp) {
       const mv = movementColor(r.movementDisposition || '');
       const tier = tierColor(r.confidenceTier || '?');
-      const oddsStr = r.odds > 0 ? '+' + r.odds : String(r.odds);
+      const oddsStr = formatExecutionOdds(r.odds, book);
       let line = '  ' + (r.selection || r.participant || '?') + ' @ ' + oddsStr + '  ' + tier + '  |  mv ' + mv;
       const extra = [];
       if (r.consensusBookCount) extra.push('books ' + r.consensusBookCount);
@@ -2067,7 +2067,7 @@ function printWalletOverlaps(w, book, overlapOnly) {
       continue;
     }
     const row = s.row;
-    const oddsStr = row.odds > 0 ? '+' + row.odds : String(row.odds);
+    const oddsStr = formatExecutionOdds(row.odds, book);
     const mv = movementColor(row.movementDisposition || '');
     const clv =
       row.recentClvPct != null
